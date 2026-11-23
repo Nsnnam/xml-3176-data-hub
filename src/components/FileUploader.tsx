@@ -1,33 +1,85 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { 
   UploadCloud, 
   FileSpreadsheet, 
-  CheckCircle, 
-  AlertCircle, 
   X, 
   FileCheck2, 
   Sparkles,
-  Info
+  FolderOpen,
+  HardDrive,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
-import { ImportedFileSummary, XmlTableType } from '../types/xml';
+import type { ImportedFileSummary, XmlTableType } from '../types/xml';
 import { parseExcelFile, ParseResult } from '../utils/excelParser';
+import { 
+  isDesktopMode, 
+  openNativeFileDialog, 
+  startDesktopImport, 
+  getDesktopImportProgress 
+} from '../utils/desktopBridge';
 
 interface FileUploaderProps {
   onFilesParsed: (results: ParseResult[]) => void;
   importedFiles: ImportedFileSummary[];
   onRemoveFile: (fileId: string) => void;
+  onRefreshDesktop?: () => void;
 }
 
 export const FileUploader: React.FC<FileUploaderProps> = ({
   onFilesParsed,
   importedFiles,
-  onRemoveFile
+  onRemoveFile,
+  onRefreshDesktop
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [progressMsg, setProgressMsg] = useState('');
+  const [desktopProgress, setDesktopProgress] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const desktop = isDesktopMode();
+
+  // Poll desktop import progress
+  useEffect(() => {
+    let interval: any = null;
+    if (isLoading && desktop) {
+      interval = setInterval(async () => {
+        try {
+          const prog = await getDesktopImportProgress();
+          setDesktopProgress(prog);
+          if (!prog.is_importing) {
+            setIsLoading(false);
+            if (prog.error) {
+              setErrorMsg(prog.error);
+            } else if (onRefreshDesktop) {
+              onRefreshDesktop();
+            }
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 500);
+    }
+    return () => clearInterval(interval);
+  }, [isLoading, desktop, onRefreshDesktop]);
+
+  const handleNativeOpen = async () => {
+    try {
+      setErrorMsg('');
+      const paths = await openNativeFileDialog();
+      if (!paths || paths.length === 0) return;
+
+      setIsLoading(true);
+      setProgressMsg(`Đang bắt đầu nạp ${paths.length} file vào cơ sở dữ liệu SQLite...`);
+      await startDesktopImport(paths);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg('Lỗi mở file: ' + (err.message || 'Vui lòng thử lại.'));
+      setIsLoading(false);
+    }
+  };
 
   const processFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
@@ -47,10 +99,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
       for (let i = 0; i < fileArray.length; i++) {
         const file = fileArray[i];
         setProgressMsg(`Đang phân tích file ${i + 1}/${fileArray.length}: ${file.name}...`);
-        
-        // Give UI a chance to render progress
         await new Promise(r => setTimeout(r, 10));
-        
         const parsed = await parseExcelFile(file);
         results.push(parsed);
       }
@@ -92,6 +141,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   };
 
   const formatFileSize = (bytes: number) => {
+    if (!bytes) return '0 B';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
@@ -109,17 +159,23 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   };
 
   return (
-    <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md">
+    <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-4">
       {/* Header text */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-teal-400" />
-            <span>Nạp Dữ liệu XML 1, 2, 3 (Định dạng Excel 3176)</span>
+            <span>Nạp Dữ Liệu XML 1, 2, 3 (Định dạng Excel 3176)</span>
+            {desktop && (
+              <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-400 border border-teal-500/30 text-[10px] font-mono font-bold flex items-center gap-1">
+                <HardDrive className="w-3 h-3" />
+                <span>Desktop SQLite Engine</span>
+              </span>
+            )}
           </h2>
           <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-teal-400" />
-            <span>Tự động nhận diện bảng XML1 (Tổng hợp), XML2 (Thuốc), XML3 (DVKT) qua cấu trúc cột mà <strong>không cần file mẫu</strong>.</span>
+            <span>Tự động nhận diện bảng XML1, XML2, XML3 — <strong>không cần file mẫu</strong>. Xử lý dữ liệu lớn không tràn RAM.</span>
           </p>
         </div>
 
@@ -130,12 +186,37 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
         )}
       </div>
 
+      {/* Desktop Native Button (when running in Desktop mode) */}
+      {desktop && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-teal-950/40 via-slate-900 to-cyan-950/40 border border-teal-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <h4 className="text-xs font-bold text-teal-300 uppercase tracking-wider flex items-center gap-1.5">
+              <FolderOpen className="w-4 h-4 text-teal-400" />
+              <span>Nạp File Trực Tiếp Bằng Hộp Thoại Windows</span>
+            </h4>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Hỗ trợ chọn hàng chục file Excel cùng lúc. Dữ liệu được ghi thẳng vào SQLite ổ cứng, hoàn toàn không bị tràn RAM.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleNativeOpen}
+            disabled={isLoading}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-teal-500/25 transition-all cursor-pointer disabled:opacity-50 flex-shrink-0"
+          >
+            <FolderOpen className="w-4 h-4" />
+            <span>Chọn File Excel Từ Ổ Đĩa...</span>
+          </button>
+        </div>
+      )}
+
       {/* Drag & Drop Area */}
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => !isLoading && fileInputRef.current?.click()}
+        onClick={() => !isLoading && (!desktop ? fileInputRef.current?.click() : handleNativeOpen())}
         className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 ${
           isDragging
             ? 'border-teal-400 bg-teal-500/10 scale-[1.005]'
@@ -162,14 +243,18 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
               Kéo thả các file Excel XML1, XML2, XML3 vào đây, hoặc <span className="text-teal-400 underline underline-offset-2">bấm để chọn file</span>
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              Hỗ trợ nạp cùng lúc nhiều file .xlsx / .xls theo chuẩn QĐ 3176/QĐ-BYT • Xử lý hoàn toàn trong máy (Client-Side)
+              Hỗ trợ nạp cùng lúc nhiều file .xlsx / .xls theo chuẩn QĐ 3176/QĐ-BYT
             </p>
           </div>
 
           {isLoading && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-teal-400 font-medium bg-teal-500/10 px-3 py-1.5 rounded-full border border-teal-500/30">
+            <div className="mt-2 flex items-center gap-2 text-xs text-teal-400 font-medium bg-teal-500/10 px-4 py-2 rounded-full border border-teal-500/30">
               <div className="w-3.5 h-3.5 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
-              <span>{progressMsg || 'Đang xử lý dữ liệu...'}</span>
+              <span>
+                {desktopProgress
+                  ? `Đang nạp file ${desktopProgress.completed_files + 1}/${desktopProgress.total_files}: ${desktopProgress.current_file} (${desktopProgress.current_rows.toLocaleString()} dòng)...`
+                  : progressMsg || 'Đang xử lý dữ liệu...'}
+              </span>
             </div>
           )}
         </div>
@@ -177,7 +262,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
 
       {/* Error message */}
       {errorMsg && (
-        <div className="mt-3 flex items-center gap-2 text-rose-400 text-xs bg-rose-500/10 py-2.5 px-3.5 rounded-xl border border-rose-500/20">
+        <div className="flex items-center gap-2 text-rose-400 text-xs bg-rose-500/10 py-2.5 px-3.5 rounded-xl border border-rose-500/20">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{errorMsg}</span>
         </div>
@@ -185,7 +270,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
 
       {/* List of imported files */}
       {importedFiles.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-slate-800">
+        <div className="pt-4 border-t border-slate-800">
           <h3 className="text-xs font-semibold text-slate-400 mb-2.5 uppercase tracking-wider flex items-center justify-between">
             <span>Danh sách file đã nạp ({importedFiles.length})</span>
             <span className="text-[11px] font-normal text-slate-500">Bấm dấu × để bỏ file nếu cần</span>
@@ -216,7 +301,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
                   <button
                     onClick={() => onRemoveFile(f.id)}
                     title="Bỏ file này"
-                    className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition-colors"
+                    className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>

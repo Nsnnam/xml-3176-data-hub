@@ -1,4 +1,4 @@
-import { 
+import type { 
   Xml1Record, 
   Xml2Record, 
   Xml3Record, 
@@ -206,7 +206,6 @@ export function buildDossierGroups(
       g.xml1?.PP_DIEU_TRI || ''
     ];
 
-    // Add drug info
     for (const d of g.xml2) {
       if (d.TEN_THUOC) tokens.push(String(d.TEN_THUOC));
       if (d.MA_THUOC) tokens.push(String(d.MA_THUOC));
@@ -217,7 +216,6 @@ export function buildDossierGroups(
       if (d.SOPHIEU) tokens.push(String(d.SOPHIEU));
     }
 
-    // Add service info
     for (const s of g.xml3) {
       if (s.TEN_DICH_VU) tokens.push(String(s.TEN_DICH_VU));
       if (s.MA_DICH_VU) tokens.push(String(s.MA_DICH_VU));
@@ -240,13 +238,28 @@ export function buildDossierGroups(
 }
 
 /**
- * Filter dossiers based on omni-search, date ranges, and category criteria
+ * Filter dossiers based on omni-search, exact-match, picked items, date ranges, and category criteria
  */
 export function filterDossiers(
   dossiers: DossierGroup[],
   filters: FilterState
 ): SearchMatchHighlight[] {
-  const { searchQuery, dateCriteria, fromDate, toDate, maKhoa, maLoaiKcb, hasDrugsOnly, hasServicesOnly } = filters;
+  const { 
+    searchQuery, 
+    exactMatch,
+    dateCriteria, 
+    fromDate, 
+    toDate, 
+    maKhoa, 
+    maLoaiKcb, 
+    hasDrugsOnly, 
+    hasServicesOnly,
+    pickedIcds = [],
+    pickedDrugs = [],
+    pickedServices = [],
+    pickedGroups = [],
+    matchMode = 'OR'
+  } = filters;
 
   const rawQuery = (searchQuery || '').trim();
   const lowerQuery = rawQuery.toLowerCase();
@@ -256,92 +269,128 @@ export function filterDossiers(
   const matchedResults: SearchMatchHighlight[] = [];
 
   for (const d of dossiers) {
-    // 1. Check Omni Search
+    const corpus = d.searchCorpus || '';
+
+    // 1. Search Query Check
     let isSearchMatch = true;
     const matchedFields: string[] = [];
     const sampleHighlights: { drugs?: string[]; services?: string[]; icd?: string[] } = {};
 
-    if (searchTerms.length > 0) {
-      for (const term of searchTerms) {
-        if (!d.searchCorpus.includes(term)) {
-          isSearchMatch = false;
-          break;
+    if (rawQuery) {
+      if (exactMatch) {
+        // Exact matching
+        const isExactLk = d.maLk.toLowerCase() === lowerQuery;
+        const isExactBn = d.maBn.toLowerCase() === lowerQuery;
+        const isExactTen = d.hoTen.toLowerCase() === lowerQuery;
+        const isExactCccd = d.soCccd === rawQuery;
+        const isExactThe = d.maThe.toLowerCase() === lowerQuery;
+        const isExactIcd = d.maBenhChinh.toLowerCase() === lowerQuery;
+        const isExactDrug = d.xml2.some(dr => (dr.TEN_THUOC || '').toLowerCase() === lowerQuery || (dr.MA_THUOC || '').toLowerCase() === lowerQuery);
+        const isExactSv = d.xml3.some(sv => (sv.TEN_DICH_VU || '').toLowerCase() === lowerQuery || (sv.MA_DICH_VU || '').toLowerCase() === lowerQuery || (sv.MA_MAY || '').toLowerCase() === lowerQuery);
+
+        if (!isExactLk && !isExactBn && !isExactTen && !isExactCccd && !isExactThe && !isExactIcd && !isExactDrug && !isExactSv) {
+          continue;
         }
-      }
 
-      if (!isSearchMatch) continue;
+        if (isExactTen) matchedFields.push('Họ tên (Chính xác)');
+        if (isExactLk) matchedFields.push('Mã LK (Chính xác)');
+        if (isExactIcd) matchedFields.push('ICD (Chính xác)');
+        if (isExactDrug) matchedFields.push('Thuốc (Chính xác)');
+        if (isExactSv) matchedFields.push('DVKT (Chính xác)');
+      } else {
+        // Substring & multi-token matching
+        for (const term of searchTerms) {
+          if (!corpus.includes(term)) {
+            isSearchMatch = false;
+            break;
+          }
+        }
+        if (!isSearchMatch) continue;
 
-      // Identify match source for helpful badges
-      if (d.hoTen && (d.hoTen.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(d.hoTen).includes(unaccentQuery))) {
-        matchedFields.push('Họ tên');
-      }
-      if (d.maLk.toLowerCase().includes(lowerQuery)) {
-        matchedFields.push('Mã LK');
-      }
-      if (d.maBn && d.maBn.toLowerCase().includes(lowerQuery)) {
-        matchedFields.push('Mã BN');
-      }
-      if (d.soCccd && d.soCccd.includes(lowerQuery)) {
-        matchedFields.push('CCCD');
-      }
-      if (d.maThe && d.maThe.toLowerCase().includes(lowerQuery)) {
-        matchedFields.push('Mã thẻ');
-      }
-      if (d.maBenhChinh && (d.maBenhChinh.toLowerCase().includes(lowerQuery) || (d.xml1?.MA_BENH_KT || '').toLowerCase().includes(lowerQuery))) {
-        matchedFields.push('Mã ICD');
-        sampleHighlights.icd = [d.maBenhChinh, d.xml1?.MA_BENH_KT || ''].filter(Boolean);
-      }
+        if (d.hoTen && (d.hoTen.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(d.hoTen).includes(unaccentQuery))) {
+          matchedFields.push('Họ tên');
+        }
+        if (d.maLk.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã LK');
+        if (d.maBn && d.maBn.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã BN');
+        if (d.soCccd && d.soCccd.includes(lowerQuery)) matchedFields.push('CCCD');
+        if (d.maThe && d.maThe.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã thẻ');
+        if (d.maBenhChinh && (d.maBenhChinh.toLowerCase().includes(lowerQuery) || (d.xml1?.MA_BENH_KT || '').toLowerCase().includes(lowerQuery))) {
+          matchedFields.push('Mã ICD');
+          sampleHighlights.icd = [d.maBenhChinh, d.xml1?.MA_BENH_KT || ''].filter(Boolean);
+        }
 
-      // Check matched drugs
-      const matchedDrugs = d.xml2.filter(dr => {
-        const drugStr = `${dr.TEN_THUOC || ''} ${dr.MA_THUOC || ''} ${dr.HAM_LUONG || ''}`;
-        return drugStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(drugStr).includes(unaccentQuery);
-      }).map(dr => String(dr.TEN_THUOC || dr.MA_THUOC || ''));
-      if (matchedDrugs.length > 0) {
-        matchedFields.push(`Thuốc (${matchedDrugs.length})`);
-        sampleHighlights.drugs = matchedDrugs.slice(0, 3);
-      }
+        const matchedDrugs = d.xml2.filter(dr => {
+          const drugStr = `${dr.TEN_THUOC || ''} ${dr.MA_THUOC || ''} ${dr.HAM_LUONG || ''}`;
+          return drugStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(drugStr).includes(unaccentQuery);
+        }).map(dr => String(dr.TEN_THUOC || dr.MA_THUOC || ''));
+        if (matchedDrugs.length > 0) {
+          matchedFields.push(`Thuốc (${matchedDrugs.length})`);
+          sampleHighlights.drugs = matchedDrugs.slice(0, 3);
+        }
 
-      // Check matched services
-      const matchedServices = d.xml3.filter(sv => {
-        const svStr = `${sv.TEN_DICH_VU || ''} ${sv.MA_DICH_VU || ''} ${sv.TEN_VAT_TU || ''} ${sv.MA_MAY || ''}`;
-        return svStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(svStr).includes(unaccentQuery);
-      }).map(sv => String(sv.TEN_DICH_VU || sv.MA_DICH_VU || ''));
-      if (matchedServices.length > 0) {
-        matchedFields.push(`Dịch vụ (${matchedServices.length})`);
-        sampleHighlights.services = matchedServices.slice(0, 3);
+        const matchedServices = d.xml3.filter(sv => {
+          const svStr = `${sv.TEN_DICH_VU || ''} ${sv.MA_DICH_VU || ''} ${sv.TEN_VAT_TU || ''} ${sv.MA_MAY || ''}`;
+          return svStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(svStr).includes(unaccentQuery);
+        }).map(sv => String(sv.TEN_DICH_VU || sv.MA_DICH_VU || ''));
+        if (matchedServices.length > 0) {
+          matchedFields.push(`Dịch vụ (${matchedServices.length})`);
+          sampleHighlights.services = matchedServices.slice(0, 3);
+        }
       }
     }
 
-    // 2. Check Date Range Criteria
+    // 2. Picked Items Check ('Nhặt' thông tin đầu vào)
+    const hasPicked = pickedIcds.length > 0 || pickedDrugs.length > 0 || pickedServices.length > 0 || pickedGroups.length > 0;
+    if (hasPicked) {
+      const matchIcd = pickedIcds.length > 0 
+        ? pickedIcds.includes(d.maBenhChinh) || (d.xml1?.MA_BENH_KT && pickedIcds.some(c => d.xml1!.MA_BENH_KT!.includes(c)))
+        : false;
+
+      const matchDrug = pickedDrugs.length > 0
+        ? d.xml2.some(dr => pickedDrugs.includes(String(dr.TEN_THUOC || '')) || pickedDrugs.includes(String(dr.MA_THUOC || '')))
+        : false;
+
+      const matchService = pickedServices.length > 0
+        ? d.xml3.some(sv => pickedServices.includes(String(sv.TEN_DICH_VU || '')) || pickedServices.includes(String(sv.MA_DICH_VU || '')) || pickedServices.includes(String(sv.TEN_VAT_TU || '')))
+        : false;
+
+      const matchGroup = pickedGroups.length > 0
+        ? d.xml2.some(dr => pickedGroups.includes(String(dr.MA_NHOM || ''))) || d.xml3.some(sv => pickedGroups.includes(String(sv.MA_NHOM || '')))
+        : false;
+
+      if (matchMode === 'AND') {
+        if (pickedIcds.length > 0 && !matchIcd) continue;
+        if (pickedDrugs.length > 0 && !matchDrug) continue;
+        if (pickedServices.length > 0 && !matchService) continue;
+        if (pickedGroups.length > 0 && !matchGroup) continue;
+      } else {
+        // OR mode
+        if (!matchIcd && !matchDrug && !matchService && !matchGroup) continue;
+      }
+    }
+
+    // 3. Date Range Check
     if (fromDate || toDate) {
       let dateMatch = false;
-
       switch (dateCriteria) {
         case 'NGAY_VAO':
           dateMatch = isDateInRange(d.dates.ngayVao, fromDate, toDate);
           break;
-
         case 'NGAY_RA':
           dateMatch = isDateInRange(d.dates.ngayRa, fromDate, toDate);
           break;
-
         case 'NGAY_TTOAN':
           dateMatch = isDateInRange(d.dates.ngayTtoan, fromDate, toDate);
           break;
-
         case 'NGAY_YL':
           dateMatch = d.dates.allNgayYl.some(dt => isDateInRange(dt, fromDate, toDate));
           break;
-
         case 'NGAY_TH_YL':
           dateMatch = d.dates.allNgayThYl.some(dt => isDateInRange(dt, fromDate, toDate));
           break;
-
         case 'NGAY_KQ':
           dateMatch = d.dates.allNgayKq.some(dt => isDateInRange(dt, fromDate, toDate));
           break;
-
         case 'ALL_DATES':
         default:
           dateMatch = 
@@ -353,29 +402,18 @@ export function filterDossiers(
             d.dates.allNgayKq.some(dt => isDateInRange(dt, fromDate, toDate));
           break;
       }
-
       if (!dateMatch) continue;
     }
 
-    // 3. Department filter
-    if (maKhoa && d.maKhoa !== maKhoa) {
-      continue;
-    }
+    // 4. Department
+    if (maKhoa && d.maKhoa !== maKhoa) continue;
 
-    // 4. Treatment Type filter
-    if (maLoaiKcb && d.maLoaiKcb !== maLoaiKcb) {
-      continue;
-    }
+    // 5. Treatment Type
+    if (maLoaiKcb && d.maLoaiKcb !== maLoaiKcb) continue;
 
-    // 5. Has Drugs filter
-    if (hasDrugsOnly && d.xml2.length === 0) {
-      continue;
-    }
-
-    // 6. Has Services filter
-    if (hasServicesOnly && d.xml3.length === 0) {
-      continue;
-    }
+    // 6. Has drugs / services
+    if (hasDrugsOnly && d.xml2.length === 0) continue;
+    if (hasServicesOnly && d.xml3.length === 0) continue;
 
     matchedResults.push({
       dossier: d,

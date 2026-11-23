@@ -162,9 +162,8 @@ export interface DossierGroup {
   maLoaiKcb: string;
   
   // Precomputed index for lightning-fast search
-  searchCorpus: string;
+  searchCorpus?: string;
   
-  // Date ranges in YYYY-MM-DD format for fast interval checks
   dates: {
     ngayVao?: string;
     ngayRa?: string;
@@ -186,6 +185,7 @@ export type DateCriteriaType =
 
 export interface FilterState {
   searchQuery: string;
+  exactMatch?: boolean;
   dateCriteria: DateCriteriaType;
   fromDate: string; // YYYY-MM-DD
   toDate: string;   // YYYY-MM-DD
@@ -193,6 +193,11 @@ export interface FilterState {
   maLoaiKcb: string;
   hasDrugsOnly: boolean;
   hasServicesOnly: boolean;
+  pickedIcds?: string[];
+  pickedDrugs?: string[];
+  pickedServices?: string[];
+  pickedGroups?: string[];
+  matchMode?: 'AND' | 'OR';
 }
 
 export interface ImportedFileSummary {
@@ -201,7 +206,7 @@ export interface ImportedFileSummary {
   fileSize: number;
   tableType: XmlTableType;
   recordCount: number;
-  loadedAt: Date;
+  loadedAt: Date | string;
 }
 
 export interface SearchMatchHighlight {
@@ -226,6 +231,6 @@ export interface SummaryStats {
   outpatientCount: number;
   departmentCounts: Record<string, number>;
   topDiseases: { code: string; name: string; count: number }[];
-  topDrugs: { name: string; count: number; cost: number }[];
-  topServices: { name: string; count: number; cost: number }[];
+  topDrugs: { name: string; code?: string; count: number; cost: number }[];
+  topServices: { name: string; code?: string; count: number; cost: number }[];
 }

@@ -22,3 +22,23 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python & Build files
+__pycache__/
+*.py[cod]
+*$py.class
+*.spec
+build_desktop/
+build_tmp/
+
+# SQLite Databases & Local Cache
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+desktop/*.db*
+
+# Releases binaries (Uploaded directly via GitHub Releases)
+releases/setup/*.exe

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { LockScreen } from './components/LockScreen';
 import { FileUploader } from './components/FileUploader';
@@ -7,55 +7,121 @@ import { FilterBar } from './components/FilterBar';
 import { DossierTable } from './components/DossierTable';
 import { DossierDetailModal } from './components/DossierDetailModal';
 import { ExportModal } from './components/ExportModal';
-import { 
+import { InputPickerModal, PickerType, PickerItem } from './components/InputPickerModal';
+import type { 
   Xml1Record, 
   Xml2Record, 
   Xml3Record, 
   ImportedFileSummary, 
   FilterState, 
-  DossierGroup 
+  DossierGroup,
+  SearchMatchHighlight,
+  SummaryStats
 } from './types/xml';
 import { checkDailyAuth, lockDailyAuth } from './utils/auth';
-import { ParseResult } from './utils/excelParser';
+import type { ParseResult } from './utils/excelParser';
 import { buildDossierGroups, filterDossiers, computeSummaryStats } from './utils/searchEngine';
+import { exportDossiersToExcel } from './utils/excelExporter';
 import { 
-  Upload, 
-  FileSpreadsheet, 
-  Layers, 
-  FolderOpen, 
+  isDesktopMode, 
+  getDesktopFilesList, 
+  getDesktopStats, 
+  getDesktopDistinctValues,
+  queryDesktopDossiers,
+  getDesktopDossierDetail,
+  deleteDesktopFile,
+  clearDesktopData,
+  exportDesktopStatistic
+} from './utils/desktopBridge';
+import { 
   Sparkles,
+  FolderOpen,
   ShieldCheck,
-  CheckCircle2,
-  HelpCircle
+  HardDrive
 } from 'lucide-react';
 
 export const App: React.FC = () => {
-  // 1. Daily Security Lock State
+  // 1. Security Lock State
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => checkDailyAuth());
 
-  // 2. Data Stores
+  // 2. Desktop Mode detection
+  const desktop = useMemo(() => isDesktopMode(), []);
+
+  // 3. Browser Mode Data Stores
   const [importedFiles, setImportedFiles] = useState<ImportedFileSummary[]>([]);
   const [fileRecordMap, setFileRecordMap] = useState<Record<string, { type: string; records: any[] }>>({});
-  
-  // 3. UI State
+
+  // 4. Desktop Mode Data Stores
+  const [desktopStats, setDesktopStats] = useState<SummaryStats | null>(null);
+  const [desktopDistinct, setDesktopDistinct] = useState<any>(null);
+  const [desktopQueryResult, setDesktopQueryResult] = useState<any>(null);
+
+  // 5. UI State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [selectedDossier, setSelectedDossier] = useState<DossierGroup | null>(null);
+  const [pickerModal, setPickerModal] = useState<{ isOpen: boolean; type: PickerType }>({
+    isOpen: false,
+    type: 'ICD'
+  });
 
-  // 4. Filtering State
+  // 6. Filtering State
   const [filters, setFilters] = useState<FilterState>({
     searchQuery: '',
+    exactMatch: false,
     dateCriteria: 'ALL_DATES',
     fromDate: '',
     toDate: '',
     maKhoa: '',
     maLoaiKcb: '',
     hasDrugsOnly: false,
-    hasServicesOnly: false
+    hasServicesOnly: false,
+    pickedIcds: [],
+    pickedDrugs: [],
+    pickedServices: [],
+    pickedGroups: [],
+    matchMode: 'OR'
   });
 
-  // Rebuild consolidated lists from fileRecordMap
+  // Desktop data refresher
+  const refreshDesktopData = useCallback(async () => {
+    if (!desktop) return;
+    try {
+      const [files, statsData, distinctData] = await Promise.all([
+        getDesktopFilesList(),
+        getDesktopStats(),
+        getDesktopDistinctValues()
+      ]);
+
+      setImportedFiles(files.map((f: any) => ({
+        id: f.id,
+        fileName: f.file_name,
+        fileSize: f.file_size,
+        tableType: f.table_type,
+        recordCount: f.record_count,
+        loadedAt: f.loaded_at
+      })));
+
+      setDesktopStats(statsData);
+      setDesktopDistinct(distinctData);
+
+      const qRes = await queryDesktopDossiers(filters, 1, 100);
+      setDesktopQueryResult(qRes);
+    } catch (err) {
+      console.error('Desktop refresh error:', err);
+    }
+  }, [desktop, filters]);
+
+  // Initial load for desktop mode
+  useEffect(() => {
+    if (desktop && isUnlocked) {
+      refreshDesktopData();
+    }
+  }, [desktop, isUnlocked, refreshDesktopData]);
+
+  // In Browser Mode: rebuild lists
   const { xml1List, xml2List, xml3List } = useMemo(() => {
+    if (desktop) return { xml1List: [], xml2List: [], xml3List: [] };
     const x1: Xml1Record[] = [];
     const x2: Xml2Record[] = [];
     const x3: Xml3Record[] = [];
@@ -67,37 +133,194 @@ export const App: React.FC = () => {
     }
 
     return { xml1List: x1, xml2List: x2, xml3List: x3 };
-  }, [fileRecordMap]);
+  }, [fileRecordMap, desktop]);
 
-  // Consolidated dossiers linked by MA_LK
-  const allDossiers = useMemo(() => {
+  // Consolidated dossiers in browser mode
+  const browserDossiers = useMemo(() => {
+    if (desktop) return [];
     return buildDossierGroups(xml1List, xml2List, xml3List);
-  }, [xml1List, xml2List, xml3List]);
+  }, [xml1List, xml2List, xml3List, desktop]);
 
-  // Unique departments for filter dropdown
+  // Filtered highlights in browser mode
+  const browserFilteredHighlights = useMemo(() => {
+    if (desktop) return [];
+    return filterDossiers(browserDossiers, filters);
+  }, [browserDossiers, filters, desktop]);
+
+  // Final display items
+  const displayItems: SearchMatchHighlight[] = useMemo(() => {
+    if (desktop) {
+      return desktopQueryResult?.items || [];
+    }
+    return browserFilteredHighlights;
+  }, [desktop, desktopQueryResult, browserFilteredHighlights]);
+
+  // Final stats
+  const currentStats: SummaryStats = useMemo(() => {
+    if (desktop && desktopStats) {
+      return desktopStats;
+    }
+    return computeSummaryStats(browserFilteredHighlights.map(h => h.dossier));
+  }, [desktop, desktopStats, browserFilteredHighlights]);
+
+  // Available departments
   const availableDepartments = useMemo(() => {
+    if (desktop && desktopDistinct?.departments) {
+      return desktopDistinct.departments;
+    }
     const depts = new Set<string>();
-    for (const d of allDossiers) {
+    for (const d of browserDossiers) {
       if (d.maKhoa) depts.add(d.maKhoa);
     }
     return Array.from(depts).sort();
-  }, [allDossiers]);
+  }, [desktop, desktopDistinct, browserDossiers]);
 
-  // Filtered results
-  const filteredHighlights = useMemo(() => {
-    return filterDossiers(allDossiers, filters);
-  }, [allDossiers, filters]);
+  // Distinct items for Picker Modals
+  const pickerItems: PickerItem[] = useMemo(() => {
+    const type = pickerModal.type;
 
-  const filteredDossiers = useMemo(() => {
-    return filteredHighlights.map(h => h.dossier);
-  }, [filteredHighlights]);
+    if (desktop && desktopDistinct) {
+      if (type === 'GROUPS') {
+        return (desktopDistinct.groups || []).map((g: any) => ({
+          code: String(g.ma_nhom),
+          name: '',
+          count: g.count,
+          extra: g.source
+        }));
+      } else if (type === 'ICD') {
+        return (desktopDistinct.icds || []).map((d: any) => ({
+          code: d.code,
+          name: d.name || '',
+          count: d.count
+        }));
+      } else if (type === 'DRUGS') {
+        return (desktopDistinct.drugs || []).map((dr: any) => ({
+          code: dr.code || dr.name,
+          name: dr.name,
+          count: dr.count,
+          extra: dr.ham_luong
+        }));
+      } else if (type === 'SERVICES') {
+        return (desktopDistinct.services || []).map((s: any) => ({
+          code: s.code || s.name,
+          name: s.name,
+          count: s.count,
+          extra: s.ma_nhom ? `Nhóm: ${s.ma_nhom}` : ''
+        }));
+      }
+    }
 
-  // Analytics stats
-  const stats = useMemo(() => {
-    return computeSummaryStats(filteredDossiers);
-  }, [filteredDossiers]);
+    // In-browser fallback extraction
+    if (type === 'GROUPS') {
+      const gMap = new Map<string, number>();
+      for (const d of browserDossiers) {
+        for (const dr of d.xml2) if (dr.MA_NHOM) gMap.set(String(dr.MA_NHOM), (gMap.get(String(dr.MA_NHOM)) || 0) + 1);
+        for (const sv of d.xml3) if (sv.MA_NHOM) gMap.set(String(sv.MA_NHOM), (gMap.get(String(sv.MA_NHOM)) || 0) + 1);
+      }
+      return Array.from(gMap.entries()).map(([code, count]) => ({ code, name: '', count }));
+    } else if (type === 'ICD') {
+      const icdMap = new Map<string, { name: string; count: number }>();
+      for (const d of browserDossiers) {
+        if (d.maBenhChinh) {
+          const ex = icdMap.get(d.maBenhChinh) || { name: d.tenBenhChinh || '', count: 0 };
+          ex.count++;
+          icdMap.set(d.maBenhChinh, ex);
+        }
+      }
+      return Array.from(icdMap.entries()).map(([code, val]) => ({ code, name: val.name, count: val.count }));
+    } else if (type === 'DRUGS') {
+      const drMap = new Map<string, { code: string; count: number; extra?: string }>();
+      for (const d of browserDossiers) {
+        for (const dr of d.xml2) {
+          const name = String(dr.TEN_THUOC || dr.MA_THUOC || '');
+          if (name) {
+            const ex = drMap.get(name) || { code: String(dr.MA_THUOC || ''), count: 0, extra: String(dr.HAM_LUONG || '') };
+            ex.count++;
+            drMap.set(name, ex);
+          }
+        }
+      }
+      return Array.from(drMap.entries()).map(([name, val]) => ({ code: val.code || name, name, count: val.count, extra: val.extra }));
+    } else if (type === 'SERVICES') {
+      const svMap = new Map<string, { code: string; count: number; extra?: string }>();
+      for (const d of browserDossiers) {
+        for (const sv of d.xml3) {
+          const name = String(sv.TEN_DICH_VU || sv.TEN_VAT_TU || sv.MA_DICH_VU || '');
+          if (name) {
+            const ex = svMap.get(name) || { code: String(sv.MA_DICH_VU || sv.MA_VAT_TU || ''), count: 0, extra: sv.MA_NHOM ? `Nhóm ${sv.MA_NHOM}` : '' };
+            ex.count++;
+            svMap.set(name, ex);
+          }
+        }
+      }
+      return Array.from(svMap.entries()).map(([name, val]) => ({ code: val.code || name, name, count: val.count, extra: val.extra }));
+    }
 
-  // Handler for parsing new files
+    return [];
+  }, [pickerModal.type, desktop, desktopDistinct, browserDossiers]);
+
+  // Handler for applying selected codes from Picker Modal
+  const handleApplyPicked = (selectedCodes: string[]) => {
+    switch (pickerModal.type) {
+      case 'GROUPS':
+        setFilters(f => ({ ...f, pickedGroups: selectedCodes }));
+        break;
+      case 'ICD':
+        setFilters(f => ({ ...f, pickedIcds: selectedCodes }));
+        break;
+      case 'DRUGS':
+        setFilters(f => ({ ...f, pickedDrugs: selectedCodes }));
+        break;
+      case 'SERVICES':
+        setFilters(f => ({ ...f, pickedServices: selectedCodes }));
+        break;
+    }
+  };
+
+  // Currently selected codes for the open picker
+  const currentSelectedCodes = useMemo(() => {
+    switch (pickerModal.type) {
+      case 'GROUPS': return filters.pickedGroups || [];
+      case 'ICD': return filters.pickedIcds || [];
+      case 'DRUGS': return filters.pickedDrugs || [];
+      case 'SERVICES': return filters.pickedServices || [];
+    }
+  }, [pickerModal.type, filters]);
+
+  // 1-Click Excel Export from Statistics item
+  const handleExportStatItem = async (statType: 'ICD' | 'DRUG' | 'SERVICE' | 'DEPARTMENT', keyValue: string) => {
+    if (desktop) {
+      const res = await exportDesktopStatistic(statType, keyValue);
+      alert(`Đã xuất thành công ${res.rowCount} dòng vào file: ${res.fileName} (Thư mục Downloads)!`);
+    } else {
+      // In-browser export
+      if (statType === 'ICD') {
+        const matches = browserDossiers.filter(d => d.maBenhChinh === keyValue || (d.xml1?.MA_BENH_KT || '').includes(keyValue));
+        exportDossiersToExcel(matches, { tableChoice: 'XML1' });
+      } else if (statType === 'DRUG') {
+        const matches = browserDossiers.filter(d => d.xml2.some(dr => dr.TEN_THUOC === keyValue || dr.MA_THUOC === keyValue));
+        exportDossiersToExcel(matches, { tableChoice: 'XML2' });
+      } else if (statType === 'SERVICE') {
+        const matches = browserDossiers.filter(d => d.xml3.some(sv => sv.TEN_DICH_VU === keyValue || sv.MA_DICH_VU === keyValue || sv.TEN_VAT_TU === keyValue));
+        exportDossiersToExcel(matches, { tableChoice: 'XML3' });
+      } else if (statType === 'DEPARTMENT') {
+        const matches = browserDossiers.filter(d => d.maKhoa === keyValue);
+        exportDossiersToExcel(matches, { tableChoice: 'ALL_THREE' });
+      }
+    }
+  };
+
+  // Inspect dossier details
+  const handleSelectDossier = async (dossier: DossierGroup) => {
+    if (desktop) {
+      const fullDetail = await getDesktopDossierDetail(dossier.maLk);
+      setSelectedDossier(fullDetail || dossier);
+    } else {
+      setSelectedDossier(dossier);
+    }
+  };
+
+  // Browser Mode File Parsed Handler
   const handleFilesParsed = (results: ParseResult[]) => {
     const newSummaryList: ImportedFileSummary[] = [];
     const newMap = { ...fileRecordMap };
@@ -125,54 +348,76 @@ export const App: React.FC = () => {
     setIsUploadModalOpen(false);
   };
 
-  // Remove individual file
-  const handleRemoveFile = (fileId: string) => {
-    setImportedFiles(prev => prev.filter(f => f.id !== fileId));
-    setFileRecordMap(prev => {
-      const updated = { ...prev };
-      delete updated[fileId];
-      return updated;
-    });
+  // Remove file
+  const handleRemoveFile = async (fileId: string) => {
+    if (desktop) {
+      await deleteDesktopFile(fileId);
+      refreshDesktopData();
+    } else {
+      setImportedFiles(prev => prev.filter(f => f.id !== fileId));
+      setFileRecordMap(prev => {
+        const updated = { ...prev };
+        delete updated[fileId];
+        return updated;
+      });
+    }
   };
 
-  // Clear all data
-  const handleClearData = () => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ dữ liệu đang nạp trong phiên làm việc này?')) {
-      setImportedFiles([]);
-      setFileRecordMap({});
+  // Clear all
+  const handleClearData = async () => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ dữ liệu đang nạp trong cơ sở dữ liệu?')) {
+      if (desktop) {
+        await clearDesktopData();
+        refreshDesktopData();
+      } else {
+        setImportedFiles([]);
+        setFileRecordMap({});
+      }
       setFilters({
         searchQuery: '',
+        exactMatch: false,
         dateCriteria: 'ALL_DATES',
         fromDate: '',
         toDate: '',
         maKhoa: '',
         maLoaiKcb: '',
         hasDrugsOnly: false,
-        hasServicesOnly: false
+        hasServicesOnly: false,
+        pickedIcds: [],
+        pickedDrugs: [],
+        pickedServices: [],
+        pickedGroups: [],
+        matchMode: 'OR'
       });
     }
   };
 
-  // Lock system
   const handleLock = () => {
     lockDailyAuth();
     setIsUnlocked(false);
   };
 
-  // If daily auth is locked, show lock screen
   if (!isUnlocked) {
     return <LockScreen onUnlock={() => setIsUnlocked(true)} />;
   }
 
+  const totalDossiersCount = desktop 
+    ? (desktopStats?.totalDossiers || 0) 
+    : browserDossiers.length;
+
+  const totalFilteredCount = desktop 
+    ? (desktopQueryResult?.totalMatched || 0) 
+    : displayItems.length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-teal-500 selection:text-slate-950">
-      {/* Top Navbar */}
+      {/* Navbar */}
       <Navbar
-        totalDossiers={allDossiers.length}
-        filteredCount={filteredDossiers.length}
-        xml1Count={xml1List.length}
-        xml2Count={xml2List.length}
-        xml3Count={xml3List.length}
+        totalDossiers={totalDossiersCount}
+        filteredCount={totalFilteredCount}
+        xml1Count={currentStats.totalXml1}
+        xml2Count={currentStats.totalXml2}
+        xml3Count={currentStats.totalXml3}
         onOpenUpload={() => setIsUploadModalOpen(true)}
         onOpenExport={() => setIsExportModalOpen(true)}
         onClearData={handleClearData}
@@ -181,24 +426,21 @@ export const App: React.FC = () => {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* If no files imported yet: Welcome Hero & Uploader */}
-        {allDossiers.length === 0 ? (
+        {totalDossiersCount === 0 ? (
           <div className="max-w-4xl mx-auto space-y-6 py-6">
-            {/* Hero Welcome */}
             <div className="text-center space-y-3">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 text-xs font-semibold">
                 <Sparkles className="w-4 h-4" />
-                <span>Hệ Thống Phân Tích & Lọc Xuất XML 3176 Thông Minh</span>
+                <span>{desktop ? 'Bản Cài Đặt Desktop Pro • SQLite Disk Engine' : 'Hệ Thống Phân Tích & Lọc Xuất XML 3176'}</span>
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">
-                Tra Cứu Dữ Liệu BHYT XML 1 - 2 - 3 <br className="hidden sm:inline" />
+                Quản Trị Dữ Liệu BHYT XML 1 - 2 - 3 <br className="hidden sm:inline" />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 via-cyan-300 to-teal-200">
                   Chuẩn Quyết Định 3176/QĐ-BYT
                 </span>
               </h1>
               <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
-                Nạp trực tiếp các file Excel XML1 (Tổng hợp), XML2 (Thuốc) và XML3 (DVKT & VTYT).
-                Hệ thống tự động liên kết hồ sơ theo <strong>Mã LK</strong>, hỗ trợ tìm kiếm toàn diện mọi thông tin, lọc thời gian và xuất file Excel chuẩn.
+                Nạp trực tiếp các file Excel XML1, XML2 và XML3. Hệ thống lưu trữ vào cơ sở dữ liệu SQLite tốc độ cao, xử lý mượt mà dữ liệu lớn, hỗ trợ tìm chính xác và nhặt thông tin đa lựa chọn.
               </p>
             </div>
 
@@ -213,47 +455,59 @@ export const App: React.FC = () => {
                   C:\Users\Admin\Downloads\XML chuẩn đã check cổng\XML chuẩn đã check cổng
                 </code>
                 <p className="mt-1.5 text-slate-400">
-                  Bạn chỉ cần mở thư mục trên rồi kéo thả các file <code>XML1_*.xlsx</code>, <code>XML2_*.xlsx</code>, <code>XML3_*.xlsx</code> trực tiếp vào khung bên dưới!
+                  {desktop 
+                    ? 'Bấm nút "Chọn File Excel Từ Ổ Đĩa..." bên dưới để chọn cùng lúc nhiều file mà không lo tràn RAM.'
+                    : 'Bạn chỉ cần kéo thả các file XML1, XML2, XML3 vào khung bên dưới.'
+                  }
                 </p>
               </div>
             </div>
 
-            {/* Primary Uploader */}
             <FileUploader
               onFilesParsed={handleFilesParsed}
               importedFiles={importedFiles}
               onRemoveFile={handleRemoveFile}
+              onRefreshDesktop={refreshDesktopData}
             />
           </div>
         ) : (
-          /* When files are loaded: Full Dashboard View */
           <div className="space-y-6">
-            {/* KPI Statistics */}
-            <StatsOverview stats={stats} />
+            {/* Stats Overview with 1-click Excel download */}
+            <StatsOverview
+              stats={currentStats}
+              onExportStatItem={handleExportStatItem}
+            />
 
-            {/* Filter Bar (Omni Search & Date Pickers) */}
+            {/* Filter Bar with Omni-Search, Exact-Match and Pickers */}
             <FilterBar
               filters={filters}
               onFilterChange={setFilters}
               onResetFilters={() => setFilters({
                 searchQuery: '',
+                exactMatch: false,
                 dateCriteria: 'ALL_DATES',
                 fromDate: '',
                 toDate: '',
                 maKhoa: '',
                 maLoaiKcb: '',
                 hasDrugsOnly: false,
-                hasServicesOnly: false
+                hasServicesOnly: false,
+                pickedIcds: [],
+                pickedDrugs: [],
+                pickedServices: [],
+                pickedGroups: [],
+                matchMode: 'OR'
               })}
               availableDepartments={availableDepartments}
-              totalMatched={filteredDossiers.length}
-              totalRecords={allDossiers.length}
+              totalMatched={totalFilteredCount}
+              totalRecords={totalDossiersCount}
+              onOpenPicker={(type) => setPickerModal({ isOpen: true, type })}
             />
 
-            {/* Data Table */}
+            {/* Dossier Table */}
             <DossierTable
-              items={filteredHighlights}
-              onSelectDossier={(d) => setSelectedDossier(d)}
+              items={displayItems}
+              onSelectDossier={handleSelectDossier}
             />
           </div>
         )}
@@ -269,7 +523,7 @@ export const App: React.FC = () => {
             </span>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
-            <span>Client-Side Data Processing • Tuyệt đối không gửi dữ liệu ra máy chủ</span>
+            <span>{desktop ? 'Bản Cài Đặt Desktop EXE • Không Giới Hạn Dung Lượng' : 'Bản Trực Tuyến GitHub Pages'}</span>
             <span>•</span>
             <a
               href="https://github.com/Nsnnam/xml-3176-data-hub"
@@ -283,7 +537,7 @@ export const App: React.FC = () => {
         </div>
       </footer>
 
-      {/* Modal: Uploader popup (when clicked "Nạp Excel" in navbar) */}
+      {/* Modal: Uploader */}
       {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
           <div className="w-full max-w-2xl relative">
@@ -299,9 +553,21 @@ export const App: React.FC = () => {
               onFilesParsed={handleFilesParsed}
               importedFiles={importedFiles}
               onRemoveFile={handleRemoveFile}
+              onRefreshDesktop={refreshDesktopData}
             />
           </div>
         </div>
+      )}
+
+      {/* Modal: Input Picker ('Nhặt' thông tin đầu vào) */}
+      {pickerModal.isOpen && (
+        <InputPickerModal
+          pickerType={pickerModal.type}
+          items={pickerItems}
+          selectedCodes={currentSelectedCodes}
+          onApply={handleApplyPicked}
+          onClose={() => setPickerModal(p => ({ ...p, isOpen: false }))}
+        />
       )}
 
       {/* Modal: Dossier Details */}
@@ -315,7 +581,7 @@ export const App: React.FC = () => {
       {/* Modal: Export to Excel */}
       {isExportModalOpen && (
         <ExportModal
-          dossiers={filteredDossiers}
+          dossiers={displayItems.map(h => h.dossier)}
           filters={filters}
           onClose={() => setIsExportModalOpen(false)}
         />
