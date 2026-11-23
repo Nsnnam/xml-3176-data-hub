@@ -11,9 +11,15 @@ import {
   Activity,
   Pill,
   Stethoscope,
-  Filter
+  Filter,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
-import type { DateCriteriaType, FilterState } from '../types/xml';
+import { 
+  DateCriteriaType, 
+  FilterState, 
+  QUICK_SEARCH_COLUMNS 
+} from '../types/xml';
 import { getDatePresets } from '../utils/dateUtils';
 import type { PickerType } from './InputPickerModal';
 
@@ -25,7 +31,23 @@ interface FilterBarProps {
   totalMatched: number;
   totalRecords: number;
   onOpenPicker: (type: PickerType) => void;
+  onOpenColumnFilters: () => void;
 }
+
+const KET_QUA_DTRI_MAP: Record<string, string> = {
+  '1': 'Khỏi bệnh',
+  '2': 'Đỡ, giảm',
+  '3': 'Không đổi',
+  '4': 'Nặng hơn',
+  '5': 'Tử vong'
+};
+
+const MA_LOAI_RV_MAP: Record<string, string> = {
+  '1': 'Ra viện',
+  '2': 'Chuyển viện',
+  '3': 'Trốn viện',
+  '4': 'Xin về'
+};
 
 export const FilterBar: React.FC<FilterBarProps> = ({
   filters,
@@ -34,12 +56,17 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   availableDepartments,
   totalMatched,
   totalRecords,
-  onOpenPicker
+  onOpenPicker,
+  onOpenColumnFilters
 }) => {
   const presets = getDatePresets();
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onFilterChange({ ...filters, searchQuery: e.target.value });
+  };
+
+  const handleSearchColumnChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onFilterChange({ ...filters, searchColumn: e.target.value });
   };
 
   const handleDateCriteriaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -68,26 +95,67 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     onFilterChange({ ...filters, [category]: list });
   };
 
+  // Remove custom rule
+  const handleRemoveCustomRule = (ruleId: string) => {
+    const updated = (filters.customRules || []).filter(r => r.id !== ruleId);
+    onFilterChange({ ...filters, customRules: updated });
+  };
+
   const totalPickedCount = (filters.pickedIcds?.length || 0) + 
                            (filters.pickedDrugs?.length || 0) + 
                            (filters.pickedServices?.length || 0) + 
                            (filters.pickedGroups?.length || 0);
 
+  // Count active specific column filters
+  const activeColumnFilterCount = (filters.ketQuaDtri ? 1 : 0) +
+                                  (filters.maLoaiRv ? 1 : 0) +
+                                  (filters.gioiTinh ? 1 : 0) +
+                                  (filters.dauMaThe ? 1 : 0) +
+                                  (filters.maMay ? 1 : 0) +
+                                  (filters.duongDung ? 1 : 0) +
+                                  (filters.minCost !== undefined && filters.minCost !== '' ? 1 : 0) +
+                                  (filters.maxCost !== undefined && filters.maxCost !== '' ? 1 : 0) +
+                                  (filters.customRules?.length || 0);
+
   const hasActiveFilters = Boolean(
     filters.searchQuery ||
+    (filters.searchColumn && filters.searchColumn !== 'ALL') ||
     filters.fromDate ||
     filters.toDate ||
     filters.maKhoa ||
     filters.maLoaiKcb ||
     filters.hasDrugsOnly ||
     filters.hasServicesOnly ||
-    totalPickedCount > 0
+    totalPickedCount > 0 ||
+    activeColumnFilterCount > 0
   );
+
+  const selectedColObj = QUICK_SEARCH_COLUMNS.find(c => c.key === (filters.searchColumn || 'ALL'));
 
   return (
     <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4 backdrop-blur-md">
-      {/* 1. Omni Search Input + Exact Match Toggle */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+      {/* 1. Search Bar with Column Dropdown + Exact Match + Advanced Column Filter Button */}
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-2.5">
+        {/* Column Dropdown Selector */}
+        <div className="relative flex-shrink-0 w-full lg:w-64">
+          <select
+            value={filters.searchColumn || 'ALL'}
+            onChange={handleSearchColumnChange}
+            className="w-full pl-3.5 pr-8 py-3.5 bg-slate-950 border border-slate-700/90 rounded-xl text-teal-300 font-semibold text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer shadow-inner appearance-none truncate"
+            title="Chọn cột dữ liệu XML cụ thể để tìm kiếm nhanh"
+          >
+            {QUICK_SEARCH_COLUMNS.map((col) => (
+              <option key={col.key} value={col.key}>
+                {col.label}
+              </option>
+            ))}
+          </select>
+          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+            <ChevronDown className="w-3.5 h-3.5" />
+          </div>
+        </div>
+
+        {/* Input box */}
         <div className="relative flex-1">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
             <Search className="w-5 h-5 text-teal-400" />
@@ -97,9 +165,13 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             type="text"
             value={filters.searchQuery}
             onChange={handleSearchChange}
-            placeholder={filters.exactMatch 
-              ? "Tìm kiếm CHÍNH XÁC: Nhập chính xác Mã LK, Mã BN, CCCD, Mã bệnh ICD, Tên thuốc..." 
-              : "Tìm kiếm mọi thứ: Tên bệnh nhân, Mã LK, Mã BN, Mã HSBA, CCCD, Mã thẻ, ICD-10, Tên thuốc, Dịch vụ..."
+            placeholder={
+              filters.searchColumn && filters.searchColumn !== 'ALL'
+                ? `Tìm kiếm trên cột ${selectedColObj?.label || filters.searchColumn}...`
+                : (filters.exactMatch 
+                    ? "Tìm kiếm CHÍNH XÁC: Nhập chính xác Mã LK, Mã BN, CCCD, Mã bệnh ICD, Tên thuốc..." 
+                    : "Tìm kiếm mọi thứ: Tên bệnh nhân, Mã LK, Mã BN, Mã HSBA, CCCD, Mã thẻ, ICD-10, Tên thuốc, Dịch vụ..."
+                  )
             }
             className={`w-full pl-12 pr-12 py-3.5 bg-slate-950 border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 text-sm font-medium shadow-inner transition-all ${
               filters.exactMatch 
@@ -119,20 +191,42 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           )}
         </div>
 
-        {/* Exact Match Toggle Button */}
-        <button
-          type="button"
-          onClick={() => onFilterChange({ ...filters, exactMatch: !filters.exactMatch })}
-          className={`flex items-center justify-center gap-1.5 px-4 py-3.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer flex-shrink-0 ${
-            filters.exactMatch
-              ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-md shadow-teal-500/20 font-bold'
-              : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-600 hover:text-white'
-          }`}
-          title="Bật/Tắt chế độ tìm kiếm chính xác từng ký tự"
-        >
-          <Target className="w-4 h-4" />
-          <span>Tìm chính xác</span>
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Exact Match Toggle Button */}
+          <button
+            type="button"
+            onClick={() => onFilterChange({ ...filters, exactMatch: !filters.exactMatch })}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-3.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+              filters.exactMatch
+                ? 'bg-teal-500 text-slate-950 border-teal-400 shadow-md shadow-teal-500/20 font-bold'
+                : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-600 hover:text-white'
+            }`}
+            title="Bật/Tắt chế độ tìm kiếm chính xác từng ký tự"
+          >
+            <Target className="w-4 h-4" />
+            <span>Tìm chính xác</span>
+          </button>
+
+          {/* Advanced Column Filters Button */}
+          <button
+            type="button"
+            onClick={onOpenColumnFilters}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-3.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+              activeColumnFilterCount > 0
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500 shadow-md font-bold'
+                : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-cyan-500/60 hover:text-white'
+            }`}
+            title="Mở bảng lọc chi tiết từng cột XML1, XML2, XML3"
+          >
+            <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
+            <span>Lọc Cột XML</span>
+            {activeColumnFilterCount > 0 && (
+              <span className="w-5 h-5 rounded-full bg-cyan-400 text-slate-950 font-mono text-[10px] font-extrabold flex items-center justify-center ml-0.5">
+                {activeColumnFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* 2. Pickers Toolbar ('Nhặt' thông tin đầu vào) */}
@@ -234,63 +328,254 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         )}
       </div>
 
-      {/* 3. Picked Items Chips Display */}
-      {totalPickedCount > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
-          <span className="text-[11px] text-slate-400 font-semibold mr-1">Điều kiện đã nhặt:</span>
-
-          {/* Groups Chips */}
-          {filters.pickedGroups?.map(g => (
-            <span key={g} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-500/10 border border-teal-500/30 text-teal-300 text-xs font-mono">
-              <span>Nhóm {g}</span>
-              <button onClick={() => handleRemovePicked('pickedGroups', g)} className="hover:text-white">
-                <X className="w-3 h-3" />
-              </button>
+      {/* 3. ACTIVE FILTERS TAGS BAR (Cho phép xóa lần lượt từng điều kiện hoặc xóa tất cả) */}
+      {hasActiveFilters && (
+        <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-teal-400" />
+              <span>Các điều kiện đang lọc (Bấm × để xóa từng mục):</span>
             </span>
-          ))}
 
-          {/* ICD Chips */}
-          {filters.pickedIcds?.map(c => (
-            <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
-              <span>ICD: {c}</span>
-              <button onClick={() => handleRemovePicked('pickedIcds', c)} className="hover:text-white">
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
+            {/* Clear All Filters Button */}
+            <button
+              type="button"
+              onClick={onResetFilters}
+              className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+              title="Xóa toàn bộ các điều kiện lọc đang áp dụng"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Xóa Tất Cả Bộ Lọc</span>
+            </button>
+          </div>
 
-          {/* Drug Chips */}
-          {filters.pickedDrugs?.map(d => (
-            <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-sans max-w-[200px] truncate">
-              <span className="truncate">Thuốc: {d}</span>
-              <button onClick={() => handleRemovePicked('pickedDrugs', d)} className="hover:text-white flex-shrink-0">
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {/* Search query chip */}
+            {filters.searchQuery && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-500/15 border border-teal-500/30 text-teal-300 text-xs">
+                <span>
+                  {filters.searchColumn && filters.searchColumn !== 'ALL' 
+                    ? `Cột [${filters.searchColumn}]: "${filters.searchQuery}"`
+                    : `Từ khóa: "${filters.searchQuery}"`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, searchQuery: '' })}
+                  className="hover:text-white cursor-pointer"
+                  title="Xóa từ khóa tìm kiếm"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
 
-          {/* Service Chips */}
-          {filters.pickedServices?.map(s => (
-            <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/30 text-purple-300 text-xs font-sans max-w-[200px] truncate">
-              <span className="truncate">DVKT: {s}</span>
-              <button onClick={() => handleRemovePicked('pickedServices', s)} className="hover:text-white flex-shrink-0">
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
+            {/* Specific search column chip (if set without query) */}
+            {filters.searchColumn && filters.searchColumn !== 'ALL' && !filters.searchQuery && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs font-mono">
+                <span>Cột tìm kiếm: {filters.searchColumn}</span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, searchColumn: 'ALL' })}
+                  className="hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
 
-          <button
-            onClick={() => onFilterChange({
-              ...filters,
-              pickedIcds: [],
-              pickedDrugs: [],
-              pickedServices: [],
-              pickedGroups: []
-            })}
-            className="text-[11px] text-rose-400 hover:underline ml-auto"
-          >
-            Xóa tất cả mục đã nhặt
-          </button>
+            {/* Date range chip */}
+            {(filters.fromDate || filters.toDate) && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs">
+                <Calendar className="w-3 h-3" />
+                <span>
+                  {filters.dateCriteria !== 'ALL_DATES' ? `[${filters.dateCriteria}] ` : ''}
+                  {filters.fromDate || '...'} → {filters.toDate || '...'}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearDateRange}
+                  className="hover:text-white cursor-pointer"
+                  title="Xóa khoảng thời gian"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {/* Department chip */}
+            {filters.maKhoa && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs">
+                <span>Khoa: {filters.maKhoa}</span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, maKhoa: '' })}
+                  className="hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {/* Treatment type chip */}
+            {filters.maLoaiKcb && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-slate-200 text-xs">
+                <span>Loại KCB: {filters.maLoaiKcb === '1' ? 'Khám bệnh' : filters.maLoaiKcb === '2' ? 'Ngoại trú' : 'Nội trú'}</span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, maLoaiKcb: '' })}
+                  className="hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {/* Has drugs only chip */}
+            {filters.hasDrugsOnly && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs">
+                <Pill className="w-3 h-3" />
+                <span>Chỉ lấy hồ sơ có thuốc</span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, hasDrugsOnly: false })}
+                  className="hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {/* Has services only chip */}
+            {filters.hasServicesOnly && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs">
+                <Stethoscope className="w-3 h-3" />
+                <span>Chỉ lấy hồ sơ có DVKT</span>
+                <button
+                  type="button"
+                  onClick={() => onFilterChange({ ...filters, hasServicesOnly: false })}
+                  className="hover:text-white cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {/* Groups Chips (Xóa lần lượt) */}
+            {filters.pickedGroups?.map(g => (
+              <span key={g} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-500/15 border border-teal-500/30 text-teal-300 text-xs font-mono">
+                <span>Nhóm {g}</span>
+                <button onClick={() => handleRemovePicked('pickedGroups', g)} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* ICD Chips (Xóa lần lượt) */}
+            {filters.pickedIcds?.map(c => (
+              <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
+                <span>ICD: {c}</span>
+                <button onClick={() => handleRemovePicked('pickedIcds', c)} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Drug Chips (Xóa lần lượt) */}
+            {filters.pickedDrugs?.map(d => (
+              <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs max-w-[200px] truncate">
+                <span className="truncate">Thuốc: {d}</span>
+                <button onClick={() => handleRemovePicked('pickedDrugs', d)} className="hover:text-white flex-shrink-0 cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Service Chips (Xóa lần lượt) */}
+            {filters.pickedServices?.map(s => (
+              <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs max-w-[200px] truncate">
+                <span className="truncate">DVKT: {s}</span>
+                <button onClick={() => handleRemovePicked('pickedServices', s)} className="hover:text-white flex-shrink-0 cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Fast Column Filter Chips */}
+            {filters.ketQuaDtri && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
+                <span>KQ điều trị: {KET_QUA_DTRI_MAP[filters.ketQuaDtri] || filters.ketQuaDtri}</span>
+                <button onClick={() => onFilterChange({ ...filters, ketQuaDtri: '' })} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {filters.maLoaiRv && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs">
+                <span>Ra viện: {MA_LOAI_RV_MAP[filters.maLoaiRv] || filters.maLoaiRv}</span>
+                <button onClick={() => onFilterChange({ ...filters, maLoaiRv: '' })} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {filters.gioiTinh && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-pink-500/15 border border-pink-500/30 text-pink-300 text-xs">
+                <span>Giới tính: {filters.gioiTinh === '1' ? 'Nam' : 'Nữ'}</span>
+                <button onClick={() => onFilterChange({ ...filters, gioiTinh: '' })} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {filters.dauMaThe && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-mono">
+                <span>Đầu thẻ: {filters.dauMaThe}</span>
+                <button onClick={() => onFilterChange({ ...filters, dauMaThe: '' })} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {filters.maMay && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/15 border border-violet-500/30 text-violet-300 text-xs font-mono">
+                <span>Mã máy: {filters.maMay}</span>
+                <button onClick={() => onFilterChange({ ...filters, maMay: '' })} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {filters.duongDung && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs">
+                <span>Đường dùng: {filters.duongDung}</span>
+                <button onClick={() => onFilterChange({ ...filters, duongDung: '' })} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+
+            {(filters.minCost !== undefined && filters.minCost !== '') || (filters.maxCost !== undefined && filters.maxCost !== '') ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
+                <span>Chi phí: {filters.minCost || 0} → {filters.maxCost || '∞'} đ</span>
+                <button onClick={() => onFilterChange({ ...filters, minCost: '', maxCost: '' })} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ) : null}
+
+            {/* Custom Rules Chips (Xóa từng quy tắc) */}
+            {filters.customRules?.map((rule) => (
+              <span key={rule.id} className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-mono">
+                <span>
+                  {rule.table}.{rule.column} {rule.operator === 'EQUALS' ? '=' : rule.operator === 'CONTAINS' ? 'chứa' : rule.operator === 'GREATER_THAN' ? '>=' : rule.operator === 'LESS_THAN' ? '<=' : rule.operator === 'NOT_EMPTY' ? '≠ rỗng' : 'bắt đầu'} {rule.operator !== 'NOT_EMPTY' ? `"${rule.value}"` : ''}
+                </span>
+                <button onClick={() => handleRemoveCustomRule(rule.id)} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
@@ -433,17 +718,6 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <Stethoscope className="w-3 h-3 text-purple-400" />
             <span>Có DVKT</span>
           </button>
-
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={onResetFilters}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Đặt lại bộ lọc</span>
-            </button>
-          )}
         </div>
       </div>
     </div>

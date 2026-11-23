@@ -2,12 +2,11 @@ import React, { useRef, useState, useEffect } from 'react';
 import { 
   UploadCloud, 
   FileSpreadsheet, 
-  X, 
+  Trash2, 
   FileCheck2, 
   Sparkles,
   FolderOpen,
   HardDrive,
-  CheckCircle2,
   AlertCircle
 } from 'lucide-react';
 import type { ImportedFileSummary, XmlTableType } from '../types/xml';
@@ -23,6 +22,7 @@ interface FileUploaderProps {
   onFilesParsed: (results: ParseResult[]) => void;
   importedFiles: ImportedFileSummary[];
   onRemoveFile: (fileId: string) => void;
+  onClearAllFiles?: () => void;
   onRefreshDesktop?: () => void;
 }
 
@@ -30,6 +30,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   onFilesParsed,
   importedFiles,
   onRemoveFile,
+  onClearAllFiles,
   onRefreshDesktop
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -158,6 +159,20 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     }
   };
 
+  const handleRemoveSingle = (f: ImportedFileSummary) => {
+    if (window.confirm(`Bạn có chắc chắn muốn xóa file "${f.fileName}"?`)) {
+      onRemoveFile(f.id);
+    }
+  };
+
+  const handleClearAll = () => {
+    if (onClearAllFiles) {
+      if (window.confirm('CẢNH BÁO: Bạn có chắc muốn xóa TẤT CẢ các file đầu vào đã nạp?')) {
+        onClearAllFiles();
+      }
+    }
+  };
+
   return (
     <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-md space-y-4">
       {/* Header text */}
@@ -268,15 +283,28 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
         </div>
       )}
 
-      {/* List of imported files */}
+      {/* List of imported files (Xóa lần lượt hoặc xóa tất cả) */}
       {importedFiles.length > 0 && (
         <div className="pt-4 border-t border-slate-800">
-          <h3 className="text-xs font-semibold text-slate-400 mb-2.5 uppercase tracking-wider flex items-center justify-between">
-            <span>Danh sách file đã nạp ({importedFiles.length})</span>
-            <span className="text-[11px] font-normal text-slate-500">Bấm dấu × để bỏ file nếu cần</span>
-          </h3>
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <span>Danh sách file đã nạp ({importedFiles.length})</span>
+            </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-48 overflow-y-auto pr-1">
+            {onClearAllFiles && (
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-colors cursor-pointer"
+                title="Xóa toàn bộ các file đã nạp"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Xóa Tất Cả File</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-52 overflow-y-auto pr-1">
             {importedFiles.map((f) => (
               <div
                 key={f.id}
@@ -299,11 +327,11 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {getTableTypeBadge(f.tableType)}
                   <button
-                    onClick={() => onRemoveFile(f.id)}
-                    title="Bỏ file này"
-                    className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                    onClick={() => handleRemoveSingle(f)}
+                    title="Xóa file này"
+                    className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/15 transition-colors cursor-pointer"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>

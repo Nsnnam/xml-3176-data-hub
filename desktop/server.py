@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import threading
 import tkinter as tk
 from tkinter import filedialog
@@ -46,6 +47,7 @@ import_progress = {
 
 class QueryPayload(BaseModel):
     searchQuery: Optional[str] = ""
+    searchColumn: Optional[str] = "ALL"
     exactMatch: Optional[bool] = False
     dateCriteria: Optional[str] = "ALL_DATES"
     fromDate: Optional[str] = ""
@@ -59,6 +61,15 @@ class QueryPayload(BaseModel):
     pickedServices: Optional[List[str]] = []
     pickedGroups: Optional[List[str]] = []
     matchMode: Optional[str] = "OR"
+    ketQuaDtri: Optional[str] = ""
+    maLoaiRv: Optional[str] = ""
+    gioiTinh: Optional[str] = ""
+    dauMaThe: Optional[str] = ""
+    maMay: Optional[str] = ""
+    duongDung: Optional[str] = ""
+    minCost: Optional[Any] = ""
+    maxCost: Optional[Any] = ""
+    customRules: Optional[List[Dict[str, Any]]] = []
     page: Optional[int] = 1
     pageSize: Optional[int] = 25
 

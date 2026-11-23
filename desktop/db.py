@@ -609,6 +609,7 @@ class XmlDatabase:
             cur = conn.cursor()
 
             search_query = (filters.get('searchQuery') or '').strip()
+            search_column = (filters.get('searchColumn') or 'ALL').strip()
             exact_match = bool(filters.get('exactMatch', False))
             date_criteria = filters.get('dateCriteria', 'ALL_DATES')
             from_date = (filters.get('fromDate') or '').strip().replace('-', '') # YYYYMMDD
@@ -624,33 +625,139 @@ class XmlDatabase:
             picked_groups = filters.get('pickedGroups') or []
             match_mode = filters.get('matchMode', 'OR') # OR or AND
 
+            # Fast column criteria
+            ket_qua_dtri = (filters.get('ketQuaDtri') or '').strip()
+            ma_loai_rv = (filters.get('maLoaiRv') or '').strip()
+            gioi_tinh = (filters.get('gioiTinh') or '').strip()
+            dau_ma_the = (filters.get('dauMaThe') or '').strip().upper()
+            ma_may = (filters.get('maMay') or '').strip()
+            duong_dung = (filters.get('duongDung') or '').strip()
+            min_cost = filters.get('minCost')
+            max_cost = filters.get('maxCost')
+            custom_rules = filters.get('customRules') or []
+
             where_clauses = ["1=1"]
             params = []
 
-            # 1. Exact Match vs Substring Search Query
+            # 1. Search Query: Omni-search or Column-Specific
             if search_query:
-                if exact_match:
-                    where_clauses.append("""
-                    (
-                        x1.ma_lk = ? OR x1.ma_bn = ? OR x1.ho_ten = ? OR x1.so_cccd = ? OR
-                        x1.ma_the_bhyt = ? OR x1.ma_benh_chinh = ? OR x1.ma_hsba = ? OR
-                        EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND (x2.ma_thuoc = ? OR x2.ten_thuoc = ?)) OR
-                        EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND (x3.ma_dich_vu = ? OR x3.ten_dich_vu = ? OR x3.ma_may = ?))
-                    )
-                    """)
-                    params.extend([search_query] * 12)
+                if search_column and search_column != 'ALL':
+                    op = "= ?" if exact_match else "LIKE ?"
+                    val = search_query if exact_match else f"%{search_query}%"
+
+                    if search_column == 'MA_LK':
+                        where_clauses.append(f"x1.ma_lk {op}")
+                        params.append(val)
+                    elif search_column == 'MA_BN':
+                        where_clauses.append(f"x1.ma_bn {op}")
+                        params.append(val)
+                    elif search_column == 'HO_TEN':
+                        where_clauses.append(f"x1.ho_ten {op}")
+                        params.append(val)
+                    elif search_column == 'SO_CCCD':
+                        where_clauses.append(f"x1.so_cccd {op}")
+                        params.append(val)
+                    elif search_column == 'MA_THE_BHYT':
+                        where_clauses.append(f"x1.ma_the_bhyt {op}")
+                        params.append(val)
+                    elif search_column == 'MA_BENH_CHINH':
+                        where_clauses.append(f"x1.ma_benh_chinh {op}")
+                        params.append(val)
+                    elif search_column == 'MA_BENH_KT':
+                        where_clauses.append(f"x1.ma_benh_kt {op}")
+                        params.append(val)
+                    elif search_column == 'CHAN_DOAN_RV':
+                        where_clauses.append(f"x1.chan_doan_rv {op}")
+                        params.append(val)
+                    elif search_column == 'MA_KHOA':
+                        where_clauses.append(f"x1.ma_khoa {op}")
+                        params.append(val)
+                    elif search_column == 'MA_DKBD':
+                        where_clauses.append(f"x1.ma_dkbd {op}")
+                        params.append(val)
+                    elif search_column == 'MA_CSKCB':
+                        where_clauses.append(f"x1.ma_cskcb {op}")
+                        params.append(val)
+                    elif search_column == 'MA_HSBA':
+                        where_clauses.append(f"x1.ma_hsba {op}")
+                        params.append(val)
+                    elif search_column == 'DIA_CHI':
+                        where_clauses.append(f"x1.dia_chi {op}")
+                        params.append(val)
+                    # XML2
+                    elif search_column == 'TEN_THUOC':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND x2.ten_thuoc {op})")
+                        params.append(val)
+                    elif search_column == 'MA_THUOC':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND x2.ma_thuoc {op})")
+                        params.append(val)
+                    elif search_column == 'HAM_LUONG':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND x2.ham_luong {op})")
+                        params.append(val)
+                    elif search_column == 'DUONG_DUNG':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND json_extract(x2.raw_json, '$.DUONG_DUNG') {op})")
+                        params.append(val)
+                    elif search_column == 'SO_DANG_KY':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND json_extract(x2.raw_json, '$.SO_DANG_KY') {op})")
+                        params.append(val)
+                    elif search_column == 'TT_THAU_XML2':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND x2.tt_thau {op})")
+                        params.append(val)
+                    elif search_column == 'MA_BAC_SI_XML2':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND x2.ma_bac_si {op})")
+                        params.append(val)
+                    # XML3
+                    elif search_column == 'TEN_DICH_VU':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ten_dich_vu {op})")
+                        params.append(val)
+                    elif search_column == 'MA_DICH_VU':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ma_dich_vu {op})")
+                        params.append(val)
+                    elif search_column == 'MA_MAY':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ma_may {op})")
+                        params.append(val)
+                    elif search_column == 'NGUOI_THUC_HIEN':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.nguoi_thuc_hien {op})")
+                        params.append(val)
+                    elif search_column == 'TEN_VAT_TU':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ten_vat_tu {op})")
+                        params.append(val)
+                    elif search_column == 'MA_VAT_TU':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ma_vat_tu {op})")
+                        params.append(val)
+                    elif search_column == 'MA_GIUONG':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ma_giuong {op})")
+                        params.append(val)
+                    elif search_column == 'TT_THAU_XML3':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.tt_thau {op})")
+                        params.append(val)
+                    elif search_column == 'SOPHIEU':
+                        where_clauses.append(f"(EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND json_extract(x2.raw_json, '$.SOPHIEU') {op}) OR EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND json_extract(x3.raw_json, '$.SOPHIEU') {op}))")
+                        params.extend([val, val])
                 else:
-                    like_term = f"%{search_query}%"
-                    where_clauses.append("""
-                    (
-                        x1.ma_lk LIKE ? OR x1.ma_bn LIKE ? OR x1.ho_ten LIKE ? OR x1.so_cccd LIKE ? OR
-                        x1.ma_the_bhyt LIKE ? OR x1.ma_benh_chinh LIKE ? OR x1.ma_benh_kt LIKE ? OR
-                        x1.chan_doan_rv LIKE ? OR x1.chan_doan_vao LIKE ? OR x1.dia_chi LIKE ? OR
-                        EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND (x2.ten_thuoc LIKE ? OR x2.ma_thuoc LIKE ?)) OR
-                        EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND (x3.ten_dich_vu LIKE ? OR x3.ma_dich_vu LIKE ? OR x3.ma_may LIKE ?))
-                    )
-                    """)
-                    params.extend([like_term] * 15)
+                    # Omni-search across all columns
+                    if exact_match:
+                        where_clauses.append("""
+                        (
+                            x1.ma_lk = ? OR x1.ma_bn = ? OR x1.ho_ten = ? OR x1.so_cccd = ? OR
+                            x1.ma_the_bhyt = ? OR x1.ma_benh_chinh = ? OR x1.ma_hsba = ? OR
+                            EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND (x2.ma_thuoc = ? OR x2.ten_thuoc = ?)) OR
+                            EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND (x3.ma_dich_vu = ? OR x3.ten_dich_vu = ? OR x3.ma_may = ?))
+                        )
+                        """)
+                        params.extend([search_query] * 12)
+                    else:
+                        like_term = f"%{search_query}%"
+                        where_clauses.append("""
+                        (
+                            x1.ma_lk LIKE ? OR x1.ma_bn LIKE ? OR x1.ho_ten LIKE ? OR x1.so_cccd LIKE ? OR
+                            x1.ma_the_bhyt LIKE ? OR x1.ma_benh_chinh LIKE ? OR x1.ma_benh_kt LIKE ? OR
+                            x1.chan_doan_rv LIKE ? OR x1.chan_doan_vao LIKE ? OR x1.dia_chi LIKE ? OR
+                            EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND (x2.ten_thuoc LIKE ? OR x2.ma_thuoc LIKE ?)) OR
+                            EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND (x3.ten_dich_vu LIKE ? OR x3.ma_dich_vu LIKE ? OR x3.ma_may LIKE ?))
+                        )
+                        """)
+                        params.extend([like_term] * 15)
 
             # 2. Picked Items Filter ('Nhặt' thông tin)
             picked_subqueries = []
@@ -738,6 +845,85 @@ class XmlDatabase:
                 where_clauses.append("EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk)")
             if has_services_only:
                 where_clauses.append("EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk)")
+
+            # 7. Fast Column Criteria
+            if ket_qua_dtri:
+                where_clauses.append("json_extract(x1.raw_json, '$.KET_QUA_DTRI') = ?")
+                params.append(ket_qua_dtri)
+            if ma_loai_rv:
+                where_clauses.append("json_extract(x1.raw_json, '$.MA_LOAI_RV') = ?")
+                params.append(ma_loai_rv)
+            if gioi_tinh:
+                where_clauses.append("x1.gioi_tinh = ?")
+                params.append(gioi_tinh)
+            if dau_ma_the:
+                where_clauses.append("x1.ma_the_bhyt LIKE ?")
+                params.append(f"{dau_ma_the}%")
+            if ma_may:
+                where_clauses.append("EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ma_may LIKE ?)")
+                params.append(f"%{ma_may}%")
+            if duong_dung:
+                where_clauses.append("EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND json_extract(x2.raw_json, '$.DUONG_DUNG') LIKE ?)")
+                params.append(f"%{duong_dung}%")
+            if min_cost is not None and min_cost != '':
+                where_clauses.append("x1.t_tongchi_bv >= ?")
+                params.append(float(min_cost))
+            if max_cost is not None and max_cost != '':
+                where_clauses.append("x1.t_tongchi_bv <= ?")
+                params.append(float(max_cost))
+
+            # 8. Dynamic Custom Column Rules
+            for rule in custom_rules:
+                tbl = rule.get('table', 'XML1')
+                col = (rule.get('column') or '').strip().upper()
+                op = rule.get('operator', 'CONTAINS')
+                val = (rule.get('value') or '').strip()
+                if not col:
+                    continue
+
+                if op == 'CONTAINS':
+                    sql_op = "LIKE ?"
+                    sql_val = f"%{val}%"
+                elif op == 'EQUALS':
+                    sql_op = "= ?"
+                    sql_val = val
+                elif op == 'STARTS_WITH':
+                    sql_op = "LIKE ?"
+                    sql_val = f"{val}%"
+                elif op == 'GREATER_THAN':
+                    sql_op = ">= ?"
+                    sql_val = float(val) if val.replace('.', '', 1).isdigit() else val
+                elif op == 'LESS_THAN':
+                    sql_op = "<= ?"
+                    sql_val = float(val) if val.replace('.', '', 1).isdigit() else val
+                elif op == 'NOT_EMPTY':
+                    sql_op = None
+                    sql_val = None
+
+                if tbl == 'XML1':
+                    direct_cols = {'MA_LK', 'STT', 'MA_BN', 'HO_TEN', 'SO_CCCD', 'NGAY_SINH', 'GIOI_TINH', 'DIA_CHI', 'MA_THE_BHYT', 'MA_DKBD', 'CHAN_DOAN_VAO', 'CHAN_DOAN_RV', 'MA_BENH_CHINH', 'MA_BENH_KT', 'NGAY_VAO', 'NGAY_RA', 'NGAY_TTOAN', 'SO_NGAY_DTRI', 'T_TONGCHI_BV', 'T_TONGCHI_BH', 'T_BHTT', 'T_BNTT', 'T_THUOC', 'T_VTYT', 'MA_LOAI_KCB', 'MA_KHOA', 'MA_CSKCB', 'MA_HSBA'}
+                    col_expr = f"x1.{col.lower()}" if col in direct_cols else f"json_extract(x1.raw_json, '$.{col}')"
+                    if op == 'NOT_EMPTY':
+                        where_clauses.append(f"{col_expr} IS NOT NULL AND length(trim({col_expr})) > 0")
+                    else:
+                        where_clauses.append(f"{col_expr} {sql_op}")
+                        params.append(sql_val)
+                elif tbl == 'XML2':
+                    direct_cols = {'MA_LK', 'STT', 'MA_THUOC', 'MA_NHOM', 'TEN_THUOC', 'DON_VI_TINH', 'HAM_LUONG', 'SO_LUONG', 'DON_GIA', 'THANH_TIEN_BV', 'THANH_TIEN_BH', 'T_BHTT', 'T_BNTT', 'MA_KHOA', 'MA_BAC_SI', 'NGAY_YL', 'NGAY_TH_YL', 'TT_THAU'}
+                    col_expr = f"x2.{col.lower()}" if col in direct_cols else f"json_extract(x2.raw_json, '$.{col}')"
+                    if op == 'NOT_EMPTY':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND {col_expr} IS NOT NULL AND length(trim({col_expr})) > 0)")
+                    else:
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND {col_expr} {sql_op})")
+                        params.append(sql_val)
+                elif tbl == 'XML3':
+                    direct_cols = {'MA_LK', 'STT', 'MA_DICH_VU', 'MA_VAT_TU', 'MA_NHOM', 'TEN_DICH_VU', 'TEN_VAT_TU', 'DON_VI_TINH', 'SO_LUONG', 'DON_GIA_BV', 'DON_GIA_BH', 'THANH_TIEN_BV', 'THANH_TIEN_BH', 'T_BHTT', 'T_BNTT', 'MA_KHOA', 'MA_BAC_SI', 'NGUOI_THUC_HIEN', 'MA_BENH', 'NGAY_YL', 'NGAY_TH_YL', 'NGAY_KQ', 'MA_MAY', 'TT_THAU'}
+                    col_expr = f"x3.{col.lower()}" if col in direct_cols else f"json_extract(x3.raw_json, '$.{col}')"
+                    if op == 'NOT_EMPTY':
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND {col_expr} IS NOT NULL AND length(trim({col_expr})) > 0)")
+                    else:
+                        where_clauses.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND {col_expr} {sql_op})")
+                        params.append(sql_val)
 
             where_str = " AND ".join(where_clauses)
 

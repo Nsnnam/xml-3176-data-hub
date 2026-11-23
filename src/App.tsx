@@ -8,6 +8,8 @@ import { DossierTable } from './components/DossierTable';
 import { DossierDetailModal } from './components/DossierDetailModal';
 import { ExportModal } from './components/ExportModal';
 import { InputPickerModal, PickerType, PickerItem } from './components/InputPickerModal';
+import { AdvancedColumnFilterModal } from './components/AdvancedColumnFilterModal';
+import { FileManagerModal } from './components/FileManagerModal';
 import type { 
   Xml1Record, 
   Xml2Record, 
@@ -40,6 +42,33 @@ import {
   HardDrive
 } from 'lucide-react';
 
+const DEFAULT_FILTERS: FilterState = {
+  searchQuery: '',
+  searchColumn: 'ALL',
+  exactMatch: false,
+  dateCriteria: 'ALL_DATES',
+  fromDate: '',
+  toDate: '',
+  maKhoa: '',
+  maLoaiKcb: '',
+  hasDrugsOnly: false,
+  hasServicesOnly: false,
+  pickedIcds: [],
+  pickedDrugs: [],
+  pickedServices: [],
+  pickedGroups: [],
+  matchMode: 'OR',
+  ketQuaDtri: '',
+  maLoaiRv: '',
+  gioiTinh: '',
+  dauMaThe: '',
+  maMay: '',
+  duongDung: '',
+  minCost: '',
+  maxCost: '',
+  customRules: []
+};
+
 export const App: React.FC = () => {
   // 1. Security Lock State
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => checkDailyAuth());
@@ -58,6 +87,8 @@ export const App: React.FC = () => {
 
   // 5. UI State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isFileManagerModalOpen, setIsFileManagerModalOpen] = useState(false);
+  const [isColumnFilterModalOpen, setIsColumnFilterModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [selectedDossier, setSelectedDossier] = useState<DossierGroup | null>(null);
   const [pickerModal, setPickerModal] = useState<{ isOpen: boolean; type: PickerType }>({
@@ -66,22 +97,7 @@ export const App: React.FC = () => {
   });
 
   // 6. Filtering State
-  const [filters, setFilters] = useState<FilterState>({
-    searchQuery: '',
-    exactMatch: false,
-    dateCriteria: 'ALL_DATES',
-    fromDate: '',
-    toDate: '',
-    maKhoa: '',
-    maLoaiKcb: '',
-    hasDrugsOnly: false,
-    hasServicesOnly: false,
-    pickedIcds: [],
-    pickedDrugs: [],
-    pickedServices: [],
-    pickedGroups: [],
-    matchMode: 'OR'
-  });
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
 
   // Desktop data refresher
   const refreshDesktopData = useCallback(async () => {
@@ -293,7 +309,6 @@ export const App: React.FC = () => {
       const res = await exportDesktopStatistic(statType, keyValue);
       alert(`Đã xuất thành công ${res.rowCount} dòng vào file: ${res.fileName} (Thư mục Downloads)!`);
     } else {
-      // In-browser export
       if (statType === 'ICD') {
         const matches = browserDossiers.filter(d => d.maBenhChinh === keyValue || (d.xml1?.MA_BENH_KT || '').includes(keyValue));
         exportDossiersToExcel(matches, { tableChoice: 'XML1' });
@@ -348,7 +363,7 @@ export const App: React.FC = () => {
     setIsUploadModalOpen(false);
   };
 
-  // Remove file
+  // Remove individual file (Xóa lần lượt)
   const handleRemoveFile = async (fileId: string) => {
     if (desktop) {
       await deleteDesktopFile(fileId);
@@ -363,33 +378,26 @@ export const App: React.FC = () => {
     }
   };
 
-  // Clear all
+  // Clear all files (Xóa tất cả file)
+  const handleClearAllFiles = async () => {
+    if (desktop) {
+      await clearDesktopData();
+      refreshDesktopData();
+    } else {
+      setImportedFiles([]);
+      setFileRecordMap({});
+    }
+    setFilters(DEFAULT_FILTERS);
+  };
+
   const handleClearData = async () => {
     if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ dữ liệu đang nạp trong cơ sở dữ liệu?')) {
-      if (desktop) {
-        await clearDesktopData();
-        refreshDesktopData();
-      } else {
-        setImportedFiles([]);
-        setFileRecordMap({});
-      }
-      setFilters({
-        searchQuery: '',
-        exactMatch: false,
-        dateCriteria: 'ALL_DATES',
-        fromDate: '',
-        toDate: '',
-        maKhoa: '',
-        maLoaiKcb: '',
-        hasDrugsOnly: false,
-        hasServicesOnly: false,
-        pickedIcds: [],
-        pickedDrugs: [],
-        pickedServices: [],
-        pickedGroups: [],
-        matchMode: 'OR'
-      });
+      await handleClearAllFiles();
     }
+  };
+
+  const handleResetFilters = () => {
+    setFilters(DEFAULT_FILTERS);
   };
 
   const handleLock = () => {
@@ -418,7 +426,9 @@ export const App: React.FC = () => {
         xml1Count={currentStats.totalXml1}
         xml2Count={currentStats.totalXml2}
         xml3Count={currentStats.totalXml3}
+        importedFilesCount={importedFiles.length}
         onOpenUpload={() => setIsUploadModalOpen(true)}
+        onOpenFileManager={() => setIsFileManagerModalOpen(true)}
         onOpenExport={() => setIsExportModalOpen(true)}
         onClearData={handleClearData}
         onLock={handleLock}
@@ -440,7 +450,7 @@ export const App: React.FC = () => {
                 </span>
               </h1>
               <p className="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
-                Nạp trực tiếp các file Excel XML1, XML2 và XML3. Hệ thống lưu trữ vào cơ sở dữ liệu SQLite tốc độ cao, xử lý mượt mà dữ liệu lớn, hỗ trợ tìm chính xác và nhặt thông tin đa lựa chọn.
+                Nạp trực tiếp các file Excel XML1, XML2 và XML3. Hệ thống lưu trữ vào cơ sở dữ liệu SQLite tốc độ cao, xử lý mượt mà dữ liệu lớn, hỗ trợ tìm chính xác, nhặt thông tin đa lựa chọn và lọc chuyên sâu theo từng cột XML.
               </p>
             </div>
 
@@ -467,6 +477,7 @@ export const App: React.FC = () => {
               onFilesParsed={handleFilesParsed}
               importedFiles={importedFiles}
               onRemoveFile={handleRemoveFile}
+              onClearAllFiles={handleClearData}
               onRefreshDesktop={refreshDesktopData}
             />
           </div>
@@ -478,30 +489,16 @@ export const App: React.FC = () => {
               onExportStatItem={handleExportStatItem}
             />
 
-            {/* Filter Bar with Omni-Search, Exact-Match and Pickers */}
+            {/* Filter Bar with Column-Specific Search, Exact-Match, Pickers, and Active Chips */}
             <FilterBar
               filters={filters}
               onFilterChange={setFilters}
-              onResetFilters={() => setFilters({
-                searchQuery: '',
-                exactMatch: false,
-                dateCriteria: 'ALL_DATES',
-                fromDate: '',
-                toDate: '',
-                maKhoa: '',
-                maLoaiKcb: '',
-                hasDrugsOnly: false,
-                hasServicesOnly: false,
-                pickedIcds: [],
-                pickedDrugs: [],
-                pickedServices: [],
-                pickedGroups: [],
-                matchMode: 'OR'
-              })}
+              onResetFilters={handleResetFilters}
               availableDepartments={availableDepartments}
               totalMatched={totalFilteredCount}
               totalRecords={totalDossiersCount}
               onOpenPicker={(type) => setPickerModal({ isOpen: true, type })}
+              onOpenColumnFilters={() => setIsColumnFilterModalOpen(true)}
             />
 
             {/* Dossier Table */}
@@ -553,11 +550,42 @@ export const App: React.FC = () => {
               onFilesParsed={handleFilesParsed}
               importedFiles={importedFiles}
               onRemoveFile={handleRemoveFile}
+              onClearAllFiles={handleClearData}
               onRefreshDesktop={refreshDesktopData}
             />
           </div>
         </div>
       )}
+
+      {/* Modal: File Manager (Xóa lần lượt hoặc xóa tất cả file) */}
+      <FileManagerModal
+        isOpen={isFileManagerModalOpen}
+        onClose={() => setIsFileManagerModalOpen(false)}
+        files={importedFiles}
+        onRemoveFile={handleRemoveFile}
+        onClearAll={handleClearAllFiles}
+        onOpenUpload={() => setIsUploadModalOpen(true)}
+      />
+
+      {/* Modal: Advanced Column Filter */}
+      <AdvancedColumnFilterModal
+        isOpen={isColumnFilterModalOpen}
+        onClose={() => setIsColumnFilterModalOpen(false)}
+        filters={filters}
+        onApply={(updated) => setFilters(f => ({ ...f, ...updated }))}
+        onReset={() => setFilters(f => ({
+          ...f,
+          ketQuaDtri: '',
+          maLoaiRv: '',
+          gioiTinh: '',
+          dauMaThe: '',
+          maMay: '',
+          duongDung: '',
+          minCost: '',
+          maxCost: '',
+          customRules: []
+        }))}
+      />
 
       {/* Modal: Input Picker ('Nhặt' thông tin đầu vào) */}
       {pickerModal.isOpen && (

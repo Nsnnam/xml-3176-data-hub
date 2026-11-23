@@ -5,7 +5,8 @@ import type {
   DossierGroup, 
   FilterState, 
   SummaryStats,
-  SearchMatchHighlight 
+  SearchMatchHighlight,
+  CustomColumnRule
 } from '../types/xml';
 import { parseXmlDate, isDateInRange } from './dateUtils';
 
@@ -144,7 +145,7 @@ export function buildDossierGroups(
         maBa: String(x3.MA_BA || '').trim(),
         soCccd: '',
         maThe: String(x3.MA_THE || '').trim(),
-        maBenhChinh: String(x3.MA_BENH || '').trim(),
+        maBenhChinh: '',
         tenBenhChinh: '',
         tongChiBv: 0,
         tongBhtt: 0,
@@ -183,48 +184,58 @@ export function buildDossierGroups(
     }
   }
 
-  // 4. Precompute searchCorpus for each dossier
+  // 4. Build comprehensive search corpus for lightning-fast lookups
   const result: DossierGroup[] = [];
+
   for (const g of map.values()) {
     const tokens: string[] = [
       g.maLk,
       g.hoTen,
       g.maBn,
-      g.maHsba,
-      g.maBa,
       g.soCccd,
       g.maThe,
+      g.maHsba,
+      g.maBa,
       g.maBenhChinh,
       g.tenBenhChinh,
-      g.maKhoa,
-      g.xml1?.CHAN_DOAN_VAO || '',
-      g.xml1?.CHAN_DOAN_RV || '',
-      g.xml1?.MA_BENH_KT || '',
-      g.xml1?.DIA_CHI || '',
-      g.xml1?.MA_DKBD || '',
-      g.xml1?.GHI_CHU || '',
-      g.xml1?.PP_DIEU_TRI || ''
+      g.maKhoa
     ];
 
-    for (const d of g.xml2) {
-      if (d.TEN_THUOC) tokens.push(String(d.TEN_THUOC));
-      if (d.MA_THUOC) tokens.push(String(d.MA_THUOC));
-      if (d.HAM_LUONG) tokens.push(String(d.HAM_LUONG));
-      if (d.SO_DANG_KY) tokens.push(String(d.SO_DANG_KY));
-      if (d.TT_THAU) tokens.push(String(d.TT_THAU));
-      if (d.MA_BAC_SI) tokens.push(String(d.MA_BAC_SI));
-      if (d.SOPHIEU) tokens.push(String(d.SOPHIEU));
+    if (g.xml1) {
+      tokens.push(
+        String(g.xml1.CHAN_DOAN_VAO || ''),
+        String(g.xml1.CHAN_DOAN_RV || ''),
+        String(g.xml1.MA_BENH_KT || ''),
+        String(g.xml1.DIA_CHI || ''),
+        String(g.xml1.MA_CSKCB || ''),
+        String(g.xml1.MA_DKBD || ''),
+        String(g.xml1.GHI_CHU || '')
+      );
     }
 
-    for (const s of g.xml3) {
-      if (s.TEN_DICH_VU) tokens.push(String(s.TEN_DICH_VU));
-      if (s.MA_DICH_VU) tokens.push(String(s.MA_DICH_VU));
-      if (s.TEN_VAT_TU) tokens.push(String(s.TEN_VAT_TU));
-      if (s.MA_VAT_TU) tokens.push(String(s.MA_VAT_TU));
-      if (s.MA_MAY) tokens.push(String(s.MA_MAY));
-      if (s.MA_BENH) tokens.push(String(s.MA_BENH));
-      if (s.NGUOI_THUC_HIEN) tokens.push(String(s.NGUOI_THUC_HIEN));
-      if (s.SOPHIEU) tokens.push(String(s.SOPHIEU));
+    for (const dr of g.xml2) {
+      tokens.push(
+        String(dr.TEN_THUOC || ''),
+        String(dr.MA_THUOC || ''),
+        String(dr.HAM_LUONG || ''),
+        String(dr.SO_DANG_KY || ''),
+        String(dr.TT_THAU || ''),
+        String(dr.MA_BAC_SI || ''),
+        String(dr.DUONG_DUNG || '')
+      );
+    }
+
+    for (const sv of g.xml3) {
+      tokens.push(
+        String(sv.TEN_DICH_VU || ''),
+        String(sv.MA_DICH_VU || ''),
+        String(sv.TEN_VAT_TU || ''),
+        String(sv.MA_VAT_TU || ''),
+        String(sv.MA_MAY || ''),
+        String(sv.NGUOI_THUC_HIEN || ''),
+        String(sv.MA_GIUONG || ''),
+        String(sv.TT_THAU || '')
+      );
     }
 
     const rawCombined = tokens.join(' ').toLowerCase();
@@ -237,8 +248,39 @@ export function buildDossierGroups(
   return result;
 }
 
+function matchRuleValue(targetVal: any, operator: string, ruleVal: string): boolean {
+  if (operator === 'NOT_EMPTY') {
+    return targetVal !== undefined && targetVal !== null && String(targetVal).trim() !== '';
+  }
+  const strTarget = String(targetVal || '').trim().toLowerCase();
+  const strRule = String(ruleVal || '').trim().toLowerCase();
+
+  switch (operator) {
+    case 'EQUALS':
+      return strTarget === strRule;
+    case 'CONTAINS':
+      return strTarget.includes(strRule) || removeVietnameseAccents(strTarget).includes(removeVietnameseAccents(strRule));
+    case 'STARTS_WITH':
+      return strTarget.startsWith(strRule);
+    case 'GREATER_THAN': {
+      const numTarget = Number(targetVal);
+      const numRule = Number(ruleVal);
+      if (!isNaN(numTarget) && !isNaN(numRule)) return numTarget >= numRule;
+      return strTarget >= strRule;
+    }
+    case 'LESS_THAN': {
+      const numTarget = Number(targetVal);
+      const numRule = Number(ruleVal);
+      if (!isNaN(numTarget) && !isNaN(numRule)) return numTarget <= numRule;
+      return strTarget <= strRule;
+    }
+    default:
+      return true;
+  }
+}
+
 /**
- * Filter dossiers based on omni-search, exact-match, picked items, date ranges, and category criteria
+ * Filter dossiers based on omni-search, column search, exact-match, picked items, date ranges, and advanced column rules
  */
 export function filterDossiers(
   dossiers: DossierGroup[],
@@ -246,6 +288,7 @@ export function filterDossiers(
 ): SearchMatchHighlight[] {
   const { 
     searchQuery, 
+    searchColumn = 'ALL',
     exactMatch,
     dateCriteria, 
     fromDate, 
@@ -258,7 +301,16 @@ export function filterDossiers(
     pickedDrugs = [],
     pickedServices = [],
     pickedGroups = [],
-    matchMode = 'OR'
+    matchMode = 'OR',
+    ketQuaDtri,
+    maLoaiRv,
+    gioiTinh,
+    dauMaThe,
+    maMay,
+    duongDung,
+    minCost,
+    maxCost,
+    customRules = []
   } = filters;
 
   const rawQuery = (searchQuery || '').trim();
@@ -271,70 +323,116 @@ export function filterDossiers(
   for (const d of dossiers) {
     const corpus = d.searchCorpus || '';
 
-    // 1. Search Query Check
+    // 1. Search Query Check (Omni or Column-Specific)
     let isSearchMatch = true;
     const matchedFields: string[] = [];
     const sampleHighlights: { drugs?: string[]; services?: string[]; icd?: string[] } = {};
 
     if (rawQuery) {
-      if (exactMatch) {
-        // Exact matching
-        const isExactLk = d.maLk.toLowerCase() === lowerQuery;
-        const isExactBn = d.maBn.toLowerCase() === lowerQuery;
-        const isExactTen = d.hoTen.toLowerCase() === lowerQuery;
-        const isExactCccd = d.soCccd === rawQuery;
-        const isExactThe = d.maThe.toLowerCase() === lowerQuery;
-        const isExactIcd = d.maBenhChinh.toLowerCase() === lowerQuery;
-        const isExactDrug = d.xml2.some(dr => (dr.TEN_THUOC || '').toLowerCase() === lowerQuery || (dr.MA_THUOC || '').toLowerCase() === lowerQuery);
-        const isExactSv = d.xml3.some(sv => (sv.TEN_DICH_VU || '').toLowerCase() === lowerQuery || (sv.MA_DICH_VU || '').toLowerCase() === lowerQuery || (sv.MA_MAY || '').toLowerCase() === lowerQuery);
+      if (searchColumn && searchColumn !== 'ALL') {
+        // Match on a specific column
+        let colMatched = false;
 
-        if (!isExactLk && !isExactBn && !isExactTen && !isExactCccd && !isExactThe && !isExactIcd && !isExactDrug && !isExactSv) {
-          continue;
-        }
+        const checkValue = (val: any) => {
+          if (val === undefined || val === null) return false;
+          const s = String(val).trim().toLowerCase();
+          if (exactMatch) return s === lowerQuery;
+          return s.includes(lowerQuery) || removeVietnameseAccents(s).includes(unaccentQuery);
+        };
 
-        if (isExactTen) matchedFields.push('Họ tên (Chính xác)');
-        if (isExactLk) matchedFields.push('Mã LK (Chính xác)');
-        if (isExactIcd) matchedFields.push('ICD (Chính xác)');
-        if (isExactDrug) matchedFields.push('Thuốc (Chính xác)');
-        if (isExactSv) matchedFields.push('DVKT (Chính xác)');
+        if (searchColumn === 'MA_LK') colMatched = checkValue(d.maLk);
+        else if (searchColumn === 'MA_BN') colMatched = checkValue(d.maBn);
+        else if (searchColumn === 'HO_TEN') colMatched = checkValue(d.hoTen);
+        else if (searchColumn === 'SO_CCCD') colMatched = checkValue(d.soCccd);
+        else if (searchColumn === 'MA_THE_BHYT') colMatched = checkValue(d.maThe);
+        else if (searchColumn === 'MA_BENH_CHINH') colMatched = checkValue(d.maBenhChinh);
+        else if (searchColumn === 'MA_BENH_KT') colMatched = checkValue(d.xml1?.MA_BENH_KT);
+        else if (searchColumn === 'CHAN_DOAN_RV') colMatched = checkValue(d.xml1?.CHAN_DOAN_RV);
+        else if (searchColumn === 'MA_KHOA') colMatched = checkValue(d.maKhoa);
+        else if (searchColumn === 'MA_DKBD') colMatched = checkValue(d.xml1?.MA_DKBD);
+        else if (searchColumn === 'MA_CSKCB') colMatched = checkValue(d.xml1?.MA_CSKCB);
+        else if (searchColumn === 'MA_HSBA') colMatched = checkValue(d.xml1?.MA_HSBA);
+        else if (searchColumn === 'DIA_CHI') colMatched = checkValue(d.xml1?.DIA_CHI);
+        // Drugs
+        else if (searchColumn === 'TEN_THUOC') colMatched = d.xml2.some(dr => checkValue(dr.TEN_THUOC));
+        else if (searchColumn === 'MA_THUOC') colMatched = d.xml2.some(dr => checkValue(dr.MA_THUOC));
+        else if (searchColumn === 'HAM_LUONG') colMatched = d.xml2.some(dr => checkValue(dr.HAM_LUONG));
+        else if (searchColumn === 'DUONG_DUNG') colMatched = d.xml2.some(dr => checkValue(dr.DUONG_DUNG));
+        else if (searchColumn === 'SO_DANG_KY') colMatched = d.xml2.some(dr => checkValue(dr.SO_DANG_KY));
+        else if (searchColumn === 'TT_THAU_XML2') colMatched = d.xml2.some(dr => checkValue(dr.TT_THAU));
+        else if (searchColumn === 'MA_BAC_SI_XML2') colMatched = d.xml2.some(dr => checkValue(dr.MA_BAC_SI));
+        // Services
+        else if (searchColumn === 'TEN_DICH_VU') colMatched = d.xml3.some(sv => checkValue(sv.TEN_DICH_VU));
+        else if (searchColumn === 'MA_DICH_VU') colMatched = d.xml3.some(sv => checkValue(sv.MA_DICH_VU));
+        else if (searchColumn === 'MA_MAY') colMatched = d.xml3.some(sv => checkValue(sv.MA_MAY));
+        else if (searchColumn === 'NGUOI_THUC_HIEN') colMatched = d.xml3.some(sv => checkValue(sv.NGUOI_THUC_HIEN));
+        else if (searchColumn === 'TEN_VAT_TU') colMatched = d.xml3.some(sv => checkValue(sv.TEN_VAT_TU));
+        else if (searchColumn === 'MA_VAT_TU') colMatched = d.xml3.some(sv => checkValue(sv.MA_VAT_TU));
+        else if (searchColumn === 'MA_GIUONG') colMatched = d.xml3.some(sv => checkValue(sv.MA_GIUONG));
+        else if (searchColumn === 'TT_THAU_XML3') colMatched = d.xml3.some(sv => checkValue(sv.TT_THAU));
+        else if (searchColumn === 'SOPHIEU') colMatched = d.xml2.some(dr => checkValue(dr.SOPHIEU)) || d.xml3.some(sv => checkValue(sv.SOPHIEU));
+
+        if (!colMatched) continue;
+        matchedFields.push(`Cột ${searchColumn}`);
       } else {
-        // Substring & multi-token matching
-        for (const term of searchTerms) {
-          if (!corpus.includes(term)) {
-            isSearchMatch = false;
-            break;
+        // Omni search across all fields
+        if (exactMatch) {
+          const isExactLk = d.maLk.toLowerCase() === lowerQuery;
+          const isExactBn = d.maBn.toLowerCase() === lowerQuery;
+          const isExactTen = d.hoTen.toLowerCase() === lowerQuery;
+          const isExactCccd = d.soCccd === rawQuery;
+          const isExactThe = d.maThe.toLowerCase() === lowerQuery;
+          const isExactIcd = d.maBenhChinh.toLowerCase() === lowerQuery;
+          const isExactDrug = d.xml2.some(dr => (dr.TEN_THUOC || '').toLowerCase() === lowerQuery || (dr.MA_THUOC || '').toLowerCase() === lowerQuery);
+          const isExactSv = d.xml3.some(sv => (sv.TEN_DICH_VU || '').toLowerCase() === lowerQuery || (sv.MA_DICH_VU || '').toLowerCase() === lowerQuery || (sv.MA_MAY || '').toLowerCase() === lowerQuery);
+
+          if (!isExactLk && !isExactBn && !isExactTen && !isExactCccd && !isExactThe && !isExactIcd && !isExactDrug && !isExactSv) {
+            continue;
           }
-        }
-        if (!isSearchMatch) continue;
 
-        if (d.hoTen && (d.hoTen.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(d.hoTen).includes(unaccentQuery))) {
-          matchedFields.push('Họ tên');
-        }
-        if (d.maLk.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã LK');
-        if (d.maBn && d.maBn.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã BN');
-        if (d.soCccd && d.soCccd.includes(lowerQuery)) matchedFields.push('CCCD');
-        if (d.maThe && d.maThe.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã thẻ');
-        if (d.maBenhChinh && (d.maBenhChinh.toLowerCase().includes(lowerQuery) || (d.xml1?.MA_BENH_KT || '').toLowerCase().includes(lowerQuery))) {
-          matchedFields.push('Mã ICD');
-          sampleHighlights.icd = [d.maBenhChinh, d.xml1?.MA_BENH_KT || ''].filter(Boolean);
-        }
+          if (isExactTen) matchedFields.push('Họ tên (Chính xác)');
+          if (isExactLk) matchedFields.push('Mã LK (Chính xác)');
+          if (isExactIcd) matchedFields.push('ICD (Chính xác)');
+          if (isExactDrug) matchedFields.push('Thuốc (Chính xác)');
+          if (isExactSv) matchedFields.push('DVKT (Chính xác)');
+        } else {
+          for (const term of searchTerms) {
+            if (!corpus.includes(term)) {
+              isSearchMatch = false;
+              break;
+            }
+          }
+          if (!isSearchMatch) continue;
 
-        const matchedDrugs = d.xml2.filter(dr => {
-          const drugStr = `${dr.TEN_THUOC || ''} ${dr.MA_THUOC || ''} ${dr.HAM_LUONG || ''}`;
-          return drugStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(drugStr).includes(unaccentQuery);
-        }).map(dr => String(dr.TEN_THUOC || dr.MA_THUOC || ''));
-        if (matchedDrugs.length > 0) {
-          matchedFields.push(`Thuốc (${matchedDrugs.length})`);
-          sampleHighlights.drugs = matchedDrugs.slice(0, 3);
-        }
+          if (d.hoTen && (d.hoTen.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(d.hoTen).includes(unaccentQuery))) {
+            matchedFields.push('Họ tên');
+          }
+          if (d.maLk.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã LK');
+          if (d.maBn && d.maBn.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã BN');
+          if (d.soCccd && d.soCccd.includes(lowerQuery)) matchedFields.push('CCCD');
+          if (d.maThe && d.maThe.toLowerCase().includes(lowerQuery)) matchedFields.push('Mã thẻ');
+          if (d.maBenhChinh && (d.maBenhChinh.toLowerCase().includes(lowerQuery) || (d.xml1?.MA_BENH_KT || '').toLowerCase().includes(lowerQuery))) {
+            matchedFields.push('Mã ICD');
+            sampleHighlights.icd = [d.maBenhChinh, d.xml1?.MA_BENH_KT || ''].filter(Boolean);
+          }
 
-        const matchedServices = d.xml3.filter(sv => {
-          const svStr = `${sv.TEN_DICH_VU || ''} ${sv.MA_DICH_VU || ''} ${sv.TEN_VAT_TU || ''} ${sv.MA_MAY || ''}`;
-          return svStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(svStr).includes(unaccentQuery);
-        }).map(sv => String(sv.TEN_DICH_VU || sv.MA_DICH_VU || ''));
-        if (matchedServices.length > 0) {
-          matchedFields.push(`Dịch vụ (${matchedServices.length})`);
-          sampleHighlights.services = matchedServices.slice(0, 3);
+          const matchedDrugs = d.xml2.filter(dr => {
+            const drugStr = `${dr.TEN_THUOC || ''} ${dr.MA_THUOC || ''} ${dr.HAM_LUONG || ''}`;
+            return drugStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(drugStr).includes(unaccentQuery);
+          }).map(dr => String(dr.TEN_THUOC || dr.MA_THUOC || ''));
+          if (matchedDrugs.length > 0) {
+            matchedFields.push(`Thuốc (${matchedDrugs.length})`);
+            sampleHighlights.drugs = matchedDrugs.slice(0, 3);
+          }
+
+          const matchedServices = d.xml3.filter(sv => {
+            const svStr = `${sv.TEN_DICH_VU || ''} ${sv.MA_DICH_VU || ''} ${sv.TEN_VAT_TU || ''} ${sv.MA_MAY || ''}`;
+            return svStr.toLowerCase().includes(lowerQuery) || removeVietnameseAccents(svStr).includes(unaccentQuery);
+          }).map(sv => String(sv.TEN_DICH_VU || sv.MA_DICH_VU || ''));
+          if (matchedServices.length > 0) {
+            matchedFields.push(`Dịch vụ (${matchedServices.length})`);
+            sampleHighlights.services = matchedServices.slice(0, 3);
+          }
         }
       }
     }
@@ -364,12 +462,45 @@ export function filterDossiers(
         if (pickedServices.length > 0 && !matchService) continue;
         if (pickedGroups.length > 0 && !matchGroup) continue;
       } else {
-        // OR mode
         if (!matchIcd && !matchDrug && !matchService && !matchGroup) continue;
       }
     }
 
-    // 3. Date Range Check
+    // 3. Fast Specific Column Checks
+    if (ketQuaDtri && String(d.xml1?.KET_QUA_DTRI || '') !== ketQuaDtri) continue;
+    if (maLoaiRv && String(d.xml1?.MA_LOAI_RV || '') !== maLoaiRv) continue;
+    if (gioiTinh && String(d.xml1?.GIOI_TINH || '') !== gioiTinh) continue;
+    if (dauMaThe && !d.maThe.toUpperCase().startsWith(dauMaThe.toUpperCase())) continue;
+    if (maMay && !d.xml3.some(sv => (sv.MA_MAY || '').toLowerCase().includes(maMay.toLowerCase()))) continue;
+    if (duongDung && !d.xml2.some(dr => (dr.DUONG_DUNG || '').toLowerCase().includes(duongDung.toLowerCase()))) continue;
+    if (minCost !== undefined && minCost !== '' && d.tongChiBv < Number(minCost)) continue;
+    if (maxCost !== undefined && maxCost !== '' && d.tongChiBv > Number(maxCost)) continue;
+
+    // 4. Dynamic Custom Column Rules
+    if (customRules.length > 0) {
+      let allRulesPass = true;
+      for (const rule of customRules) {
+        if (!rule.column) continue;
+        let rulePass = false;
+
+        if (rule.table === 'XML1') {
+          const val = d.xml1 ? d.xml1[rule.column] : undefined;
+          rulePass = matchRuleValue(val, rule.operator, rule.value);
+        } else if (rule.table === 'XML2') {
+          rulePass = d.xml2.some(dr => matchRuleValue(dr[rule.column], rule.operator, rule.value));
+        } else if (rule.table === 'XML3') {
+          rulePass = d.xml3.some(sv => matchRuleValue(sv[rule.column], rule.operator, rule.value));
+        }
+
+        if (!rulePass) {
+          allRulesPass = false;
+          break;
+        }
+      }
+      if (!allRulesPass) continue;
+    }
+
+    // 5. Date Range Check
     if (fromDate || toDate) {
       let dateMatch = false;
       switch (dateCriteria) {
@@ -405,13 +536,13 @@ export function filterDossiers(
       if (!dateMatch) continue;
     }
 
-    // 4. Department
+    // 6. Department
     if (maKhoa && d.maKhoa !== maKhoa) continue;
 
-    // 5. Treatment Type
+    // 7. Treatment Type
     if (maLoaiKcb && d.maLoaiKcb !== maLoaiKcb) continue;
 
-    // 6. Has drugs / services
+    // 8. Has drugs / services
     if (hasDrugsOnly && d.xml2.length === 0) continue;
     if (hasServicesOnly && d.xml3.length === 0) continue;
 

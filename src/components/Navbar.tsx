@@ -5,7 +5,8 @@ import {
   Lock, 
   Trash2, 
   Activity,
-  Layers
+  Layers,
+  FolderOpen
 } from 'lucide-react';
 import { lockDailyAuth } from '../utils/auth';
 
@@ -14,7 +15,9 @@ interface NavbarProps {
   xml1Count: number;
   xml2Count: number;
   xml3Count: number;
+  importedFilesCount?: number;
   onOpenUpload: () => void;
+  onOpenFileManager?: () => void;
   onOpenExport: () => void;
   onClearData: () => void;
   onLock: () => void;
@@ -26,7 +29,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   xml1Count,
   xml2Count,
   xml3Count,
+  importedFilesCount = 0,
   onOpenUpload,
+  onOpenFileManager,
   onOpenExport,
   onClearData,
   onLock,
@@ -117,6 +122,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Upload className="w-3.5 h-3.5 text-teal-400" />
             <span>Nạp Excel</span>
           </button>
+
+          {importedFilesCount > 0 && onOpenFileManager && (
+            <button
+              onClick={onOpenFileManager}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 transition-all cursor-pointer shadow-sm"
+              title="Quản lý danh sách file đã nạp (xóa từng file hoặc xóa tất cả)"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-cyan-400" />
+              <span>File ({importedFilesCount})</span>
+            </button>
+          )}
 
           {totalDossiers > 0 && (
             <button

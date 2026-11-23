@@ -183,8 +183,60 @@ export type DateCriteriaType =
   | 'NGAY_KQ'
   | 'NGAY_TTOAN';
 
+export interface CustomColumnRule {
+  id: string;
+  table: 'XML1' | 'XML2' | 'XML3';
+  column: string;
+  operator: 'CONTAINS' | 'EQUALS' | 'STARTS_WITH' | 'GREATER_THAN' | 'LESS_THAN' | 'NOT_EMPTY';
+  value: string;
+}
+
+export interface QuickSearchColumnOption {
+  key: string;
+  label: string;
+  table: 'ALL' | 'XML1' | 'XML2' | 'XML3';
+  field: string;
+}
+
+export const QUICK_SEARCH_COLUMNS: QuickSearchColumnOption[] = [
+  { key: 'ALL', label: '🔍 Tất cả các cột (Toàn văn)', table: 'ALL', field: 'ALL' },
+  // XML1
+  { key: 'MA_LK', label: '[XML1] Mã liên kết (MA_LK)', table: 'XML1', field: 'MA_LK' },
+  { key: 'MA_BN', label: '[XML1] Mã bệnh nhân (MA_BN)', table: 'XML1', field: 'MA_BN' },
+  { key: 'HO_TEN', label: '[XML1] Họ và tên (HO_TEN)', table: 'XML1', field: 'HO_TEN' },
+  { key: 'SO_CCCD', label: '[XML1] Số CCCD / Định danh (SO_CCCD)', table: 'XML1', field: 'SO_CCCD' },
+  { key: 'MA_THE_BHYT', label: '[XML1] Mã thẻ BHYT (MA_THE_BHYT)', table: 'XML1', field: 'MA_THE_BHYT' },
+  { key: 'MA_BENH_CHINH', label: '[XML1] Mã bệnh chính ICD-10 (MA_BENH_CHINH)', table: 'XML1', field: 'MA_BENH_CHINH' },
+  { key: 'MA_BENH_KT', label: '[XML1] Mã bệnh kèm theo (MA_BENH_KT)', table: 'XML1', field: 'MA_BENH_KT' },
+  { key: 'CHAN_DOAN_RV', label: '[XML1] Chẩn đoán ra viện (CHAN_DOAN_RV)', table: 'XML1', field: 'CHAN_DOAN_RV' },
+  { key: 'MA_KHOA', label: '[XML1] Khoa điều trị (MA_KHOA)', table: 'XML1', field: 'MA_KHOA' },
+  { key: 'MA_DKBD', label: '[XML1] Mã ĐKBD ban đầu (MA_DKBD)', table: 'XML1', field: 'MA_DKBD' },
+  { key: 'MA_CSKCB', label: '[XML1] Cơ sở KCB (MA_CSKCB)', table: 'XML1', field: 'MA_CSKCB' },
+  { key: 'MA_HSBA', label: '[XML1] Mã hồ sơ bệnh án (MA_HSBA)', table: 'XML1', field: 'MA_HSBA' },
+  { key: 'DIA_CHI', label: '[XML1] Địa chỉ cư trú (DIA_CHI)', table: 'XML1', field: 'DIA_CHI' },
+  // XML2
+  { key: 'TEN_THUOC', label: '[XML2] Tên thuốc (TEN_THUOC)', table: 'XML2', field: 'TEN_THUOC' },
+  { key: 'MA_THUOC', label: '[XML2] Mã thuốc (MA_THUOC)', table: 'XML2', field: 'MA_THUOC' },
+  { key: 'HAM_LUONG', label: '[XML2] Hàm lượng thuốc (HAM_LUONG)', table: 'XML2', field: 'HAM_LUONG' },
+  { key: 'DUONG_DUNG', label: '[XML2] Đường dùng thuốc (DUONG_DUNG)', table: 'XML2', field: 'DUONG_DUNG' },
+  { key: 'SO_DANG_KY', label: '[XML2] Số đăng ký thuốc (SO_DANG_KY)', table: 'XML2', field: 'SO_DANG_KY' },
+  { key: 'TT_THAU_XML2', label: '[XML2] Thông tin thầu thuốc (TT_THAU)', table: 'XML2', field: 'TT_THAU' },
+  { key: 'MA_BAC_SI_XML2', label: '[XML2] Bác sĩ kê đơn (MA_BAC_SI)', table: 'XML2', field: 'MA_BAC_SI' },
+  // XML3
+  { key: 'TEN_DICH_VU', label: '[XML3] Tên dịch vụ kỹ thuật (TEN_DICH_VU)', table: 'XML3', field: 'TEN_DICH_VU' },
+  { key: 'MA_DICH_VU', label: '[XML3] Mã dịch vụ kỹ thuật (MA_DICH_VU)', table: 'XML3', field: 'MA_DICH_VU' },
+  { key: 'MA_MAY', label: '[XML3] Mã máy thực hiện (MA_MAY)', table: 'XML3', field: 'MA_MAY' },
+  { key: 'NGUOI_THUC_HIEN', label: '[XML3] Người thực hiện (NGUOI_THUC_HIEN)', table: 'XML3', field: 'NGUOI_THUC_HIEN' },
+  { key: 'TEN_VAT_TU', label: '[XML3] Tên vật tư y tế (TEN_VAT_TU)', table: 'XML3', field: 'TEN_VAT_TU' },
+  { key: 'MA_VAT_TU', label: '[XML3] Mã vật tư y tế (MA_VAT_TU)', table: 'XML3', field: 'MA_VAT_TU' },
+  { key: 'MA_GIUONG', label: '[XML3] Mã giường (MA_GIUONG)', table: 'XML3', field: 'MA_GIUONG' },
+  { key: 'TT_THAU_XML3', label: '[XML3] Thông tin thầu DVKT (TT_THAU)', table: 'XML3', field: 'TT_THAU' },
+  { key: 'SOPHIEU', label: '[XML2/3] Số phiếu (SOPHIEU)', table: 'XML3', field: 'SOPHIEU' }
+];
+
 export interface FilterState {
   searchQuery: string;
+  searchColumn?: string;
   exactMatch?: boolean;
   dateCriteria: DateCriteriaType;
   fromDate: string; // YYYY-MM-DD
@@ -198,6 +250,17 @@ export interface FilterState {
   pickedServices?: string[];
   pickedGroups?: string[];
   matchMode?: 'AND' | 'OR';
+  
+  // Specific column criteria
+  ketQuaDtri?: string;
+  maLoaiRv?: string;
+  gioiTinh?: string;
+  dauMaThe?: string;
+  maMay?: string;
+  duongDung?: string;
+  minCost?: number | '';
+  maxCost?: number | '';
+  customRules?: CustomColumnRule[];
 }
 
 export interface ImportedFileSummary {
