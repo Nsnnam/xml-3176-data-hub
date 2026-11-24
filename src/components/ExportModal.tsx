@@ -25,12 +25,14 @@ interface ExportModalProps {
   dossiers: DossierGroup[];
   filters: FilterState;
   onClose: () => void;
+  totalCount?: number;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
   dossiers,
   filters,
-  onClose
+  onClose,
+  totalCount = 0
 }) => {
   const [tableChoice, setTableChoice] = useState<'XML1' | 'XML2' | 'XML3' | 'ALL_THREE'>('ALL_THREE');
   const [onlyItemsInDateRange, setOnlyItemsInDateRange] = useState(false);
@@ -60,6 +62,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const totalXml1 = dossiers.length;
   const totalXml2 = dossiers.reduce((acc, d) => acc + d.xml2.length, 0);
   const totalXml3 = dossiers.reduce((acc, d) => acc + d.xml3.length, 0);
+
+  // In desktop mode, totalCount is passed from backend filtered count
+  const effectiveCount = isDesktop ? (totalCount > 0 ? totalCount : dossiers.length) : dossiers.length;
 
   const handleToggleAskEveryTime = async (val: boolean) => {
     const newCfg = { ...desktopConfig, askEveryTime: val };
@@ -183,7 +188,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-teal-400 font-bold">
-                  {isDesktop ? 'Đồng bộ 3 bảng' : `${(totalXml1 + totalXml2 + totalXml3).toLocaleString('vi-VN')} dòng`}
+                  {isDesktop ? `${effectiveCount.toLocaleString('vi-VN')} hồ sơ (Đồng bộ 3 bảng)` : `${(totalXml1 + totalXml2 + totalXml3).toLocaleString('vi-VN')} dòng`}
                 </span>
               </label>
 
@@ -206,7 +211,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-blue-400 font-bold">
-                  {isDesktop ? 'Toàn bộ hồ sơ' : `${totalXml1.toLocaleString('vi-VN')} hồ sơ`}
+                  {isDesktop ? `${effectiveCount.toLocaleString('vi-VN')} hồ sơ` : `${totalXml1.toLocaleString('vi-VN')} hồ sơ`}
                 </span>
               </label>
 
@@ -229,7 +234,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-amber-400 font-bold">
-                  {isDesktop ? 'Theo MA_LK' : `${totalXml2.toLocaleString('vi-VN')} dòng`}
+                  {isDesktop ? `Theo ${effectiveCount.toLocaleString('vi-VN')} hồ sơ` : `${totalXml2.toLocaleString('vi-VN')} dòng`}
                 </span>
               </label>
 
@@ -252,7 +257,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-purple-400 font-bold">
-                  {isDesktop ? 'Theo MA_LK' : `${totalXml3.toLocaleString('vi-VN')} dòng`}
+                  {isDesktop ? `Theo ${effectiveCount.toLocaleString('vi-VN')} hồ sơ` : `${totalXml3.toLocaleString('vi-VN')} dòng`}
                 </span>
               </label>
             </div>
@@ -390,7 +395,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
           <button
             onClick={handleExport}
-            disabled={isExporting || dossiers.length === 0}
+            disabled={isExporting || effectiveCount === 0}
             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-teal-500/20 transition-all disabled:opacity-50 cursor-pointer"
           >
             {isExporting ? (
@@ -401,7 +406,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             ) : (
               <>
                 <Download className="w-4 h-4" />
-                <span>{exportResult ? 'Xuất Lại File Khác' : 'Tiến Hành Xuất File Excel'}</span>
+                <span>{exportResult ? 'Xuất Lại File Khác' : `Tiến Hành Xuất File Excel (${effectiveCount.toLocaleString('vi-VN')} hồ sơ)`}</span>
               </>
             )}
           </button>

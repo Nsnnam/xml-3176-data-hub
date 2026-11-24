@@ -4,6 +4,37 @@ Tất cả các thay đổi đáng chú ý của dự án **NsN XML DataHub 3176
 
 ---
 
+## [v1.1.3] - 2026-11-24
+
+### 🚀 1. Sửa Lỗi Không Bấm Được Nút Xuất File Excel Sau Khi Lọc (Bản Desktop EXE)
+- **Khắc phục lỗi nút xuất bị vô hiệu hóa (Disabled)**:
+  - Trên bản Desktop EXE, để tránh tràn RAM khi xử lý dữ liệu lớn (hàng chục nghìn hồ sơ), dữ liệu được lưu trực tiếp trong cơ sở dữ liệu SQLite trên ổ đĩa và mảng hồ sơ `dossiers` trên bộ nhớ trình duyệt là rỗng.
+  - Trước đây, hộp thoại `ExportModal` kiểm tra điều kiện `disabled={isExporting || dossiers.length === 0}`, khiến nút **`[Tiến Hành Xuất File Excel]`** bị khóa vĩnh viễn dù bộ lọc đang tìm thấy hàng trăm hồ sơ.
+  - **Đã đồng bộ biến số lượng `totalCount`** (`totalFilteredCount`) từ backend SQLite trực tiếp vào `ExportModal`. Giờ đây nút xuất luôn hoạt động trơn tru với nhãn hiển thị số lượng chính xác: **`Tiến Hành Xuất File Excel (137 hồ sơ)`**.
+  - Các tùy chọn xuất hiển thị đúng số liệu:
+    - *Trọn Bộ 3 Bảng*: `{count} hồ sơ (Đồng bộ 3 bảng)`
+    - *Bảng 1 (XML1)*: `{count} hồ sơ`
+    - *Bảng 2 (XML2)*: `Theo {count} hồ sơ đã lọc`
+    - *Bảng 3 (XML3)*: `Theo {count} hồ sơ đã lọc`
+
+### 🏥 2. Bổ Sung Mã Bệnh Nhân (`MA_BN` dạng `BAxxxx`) & Mã Bệnh Án (`MA_BA`) Vào Tất Cả Báo Cáo Xuất Ra
+- **Đáp ứng nghiệp vụ quản lý bệnh án HIS & giám định BHYT**:
+  - Mã bệnh nhân trong hệ thống y tế có tiền tố chuẩn dạng **`BAxxxx`** (ví dụ `BA25179839`, `BA26003619`).
+  - Trước đây, một số báo cáo chi tiết xuất ra từ mục thống kê (như xuất chi tiết danh mục Thuốc `Xuat_ThongKe_DRUG_...xlsx` hoặc DVKT `Xuat_ThongKe_SERVICE_...xlsx`) chỉ có `MA_LK`, `HO_TEN`, `SO_CCCD` mà thiếu trường `MA_BN`. Người dùng không thể đối soát mã bệnh nhân trên phần mềm HIS bệnh viện.
+  - **Chuẩn hóa cấu trúc cột cho toàn bộ các báo cáo**:
+    - **Báo cáo Thuốc kê đơn (`DRUG`)**: `['MA_LK', 'MA_BN', 'MA_BA', 'HO_TEN', 'SO_CCCD', 'MA_THE_BHYT', 'MA_THUOC', 'TEN_THUOC', 'HAM_LUONG', 'DON_VI_TINH', 'SO_LUONG', 'DON_GIA', 'THANH_TIEN_BV', 'NGAY_YL', 'MA_BAC_SI', 'TT_THAU']`.
+    - **Báo cáo Dịch vụ Kỹ thuật & VTYT (`SERVICE`)**: `['MA_LK', 'MA_BN', 'MA_BA', 'HO_TEN', 'SO_CCCD', 'MA_THE_BHYT', 'MA_DICH_VU', 'TEN_DICH_VU', 'MA_NHOM', 'SO_LUONG', 'DON_GIA_BV', 'THANH_TIEN_BV', 'NGAY_YL', 'NGAY_TH_YL', 'NGAY_KQ', 'MA_MAY', 'NGUOI_THUC_HIEN']`.
+    - **Báo cáo Hồ sơ theo Bệnh (`ICD`) & theo Khoa (`DEPARTMENT`)**: Bổ sung đầy đủ `MA_BN`, `MA_BA`, `MA_THE_BHYT`.
+    - **Báo cáo Danh sách Hồ sơ KCB từ thẻ KPI**: Bổ sung cột `Mã BA` ngay cạnh `Mã BN`.
+    - **Bảng XML1 khi xuất lọc**: Tự động bù đắp trường `MA_BN` và `MA_BA` từ cơ sở dữ liệu nếu file nguồn bị thiếu thuộc tính trong JSON.
+
+### 🛡️ 3. Tối Ưu Hóa An Toàn Hộp Thoại Lưu File (Save As Dialog) Trên Windows
+- Bọc cơ chế xử lý ngoại lệ an toàn cho hộp thoại Windows Save As của Tkinter trong môi trường đa luồng FastAPI / PyInstaller.
+- Khi người dùng hủy lưu (Cancel), hệ thống phản hồi cờ `cancelled: true` mượt mà, không gây lỗi logic.
+- Trường hợp hộp thoại bị gián đoạn, hệ thống tự động fallback lưu an toàn vào thư mục mặc định với tên tệp chuẩn hóa thời gian và thông báo rõ ràng cho người dùng kèm đường dẫn và nút mở thư mục 1-click.
+
+---
+
 ## [v1.1.2] - 2026-11-24
 
 ### 🔄 1. Sửa Triệt Để Lỗi Xuất File Excel Trống Trơn & Đồng Bộ 100% Theo Khóa `MA_LK` (Mã Liên Kết)

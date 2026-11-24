@@ -352,23 +352,28 @@ def export_statistic(payload: StatExportPayload):
     out_name = f"Xuat_ThongKe_{payload.statType}_{clean_val}_{timestamp}.xlsx"
 
     # If askEveryTime, prompt save-as dialog
+    out_path = os.path.join(default_dir, out_name)
     if cfg.get("askEveryTime", True):
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        chosen_path = filedialog.asksaveasfilename(
-            title="Chọn nơi lưu file thống kê Excel",
-            initialdir=default_dir,
-            initialfile=out_name,
-            defaultextension=".xlsx",
-            filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
-        )
-        root.destroy()
+        chosen_path = None
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            chosen_path = filedialog.asksaveasfilename(
+                title="Chọn nơi lưu file thống kê Excel",
+                initialdir=default_dir,
+                initialfile=out_name,
+                defaultextension=".xlsx",
+                filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
+            )
+            root.destroy()
+        except Exception as tk_err:
+            print(f"[Export Stat Dialog] Error: {tk_err}, using default path.")
+            chosen_path = out_path
+
         if not chosen_path:
-            return {"success": False, "cancelled": True}
+            return {"success": False, "cancelled": True, "filePath": "", "fileName": "", "rowCount": 0}
         out_path = chosen_path
-    else:
-        out_path = os.path.join(default_dir, out_name)
 
     res = db.export_statistic_detail(payload.statType, payload.keyValue, out_path)
     
@@ -410,23 +415,28 @@ def export_filtered_excel(payload: FilteredExportPayload):
     if payload.customFileName:
         default_name = payload.customFileName
 
+    out_path = os.path.join(default_dir, default_name)
     if cfg.get("askEveryTime", True):
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        chosen_path = filedialog.asksaveasfilename(
-            title="Chọn nơi lưu file Excel xuất dữ liệu đã lọc (QĐ 3176)",
-            initialdir=default_dir,
-            initialfile=default_name,
-            defaultextension=".xlsx",
-            filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
-        )
-        root.destroy()
+        chosen_path = None
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            chosen_path = filedialog.asksaveasfilename(
+                title="Chọn nơi lưu file Excel xuất dữ liệu đã lọc (QĐ 3176)",
+                initialdir=default_dir,
+                initialfile=default_name,
+                defaultextension=".xlsx",
+                filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
+            )
+            root.destroy()
+        except Exception as tk_err:
+            print(f"[Export Filtered Dialog] Error: {tk_err}, using default path.")
+            chosen_path = out_path
+
         if not chosen_path:
-            return {"success": False, "cancelled": True}
+            return {"success": False, "cancelled": True, "filePath": "", "fileName": "", "rowCount": 0}
         out_path = chosen_path
-    else:
-        out_path = os.path.join(default_dir, default_name)
 
     res = db.export_filtered_excel(
         filters=payload.filters,
@@ -472,23 +482,28 @@ def export_kpi_table(payload: KpiExportPayload):
     prefix = name_map.get(payload.type, 'ThongKe_ChiTiet')
     default_name = f"{prefix}_3176_{timestamp}.xlsx"
 
+    out_path = os.path.join(default_dir, default_name)
     if cfg.get("askEveryTime", True):
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        chosen_path = filedialog.asksaveasfilename(
-            title="Chọn nơi lưu file thống kê chi tiết Excel",
-            initialdir=default_dir,
-            initialfile=default_name,
-            defaultextension=".xlsx",
-            filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
-        )
-        root.destroy()
+        chosen_path = None
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            chosen_path = filedialog.asksaveasfilename(
+                title="Chọn nơi lưu file thống kê chi tiết Excel",
+                initialdir=default_dir,
+                initialfile=default_name,
+                defaultextension=".xlsx",
+                filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
+            )
+            root.destroy()
+        except Exception as tk_err:
+            print(f"[Export KPI Dialog] Error: {tk_err}, using default path.")
+            chosen_path = out_path
+
         if not chosen_path:
-            return {"success": False, "cancelled": True}
+            return {"success": False, "cancelled": True, "filePath": "", "fileName": "", "rowCount": 0}
         out_path = chosen_path
-    else:
-        out_path = os.path.join(default_dir, default_name)
 
     res = db.export_kpi_table_to_excel(payload.type, payload.search or "", out_path)
 

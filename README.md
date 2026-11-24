@@ -1,7 +1,7 @@
 # NsN XML DataHub 3176
 
 [![Deploy to GitHub Pages](https://github.com/Nsnnam/xml-3176-data-hub/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Nsnnam/xml-3176-data-hub/actions/workflows/deploy-pages.yml)
-[![Version](https://img.shields.io/badge/version-1.1.2-teal.svg)](https://github.com/Nsnnam/xml-3176-data-hub)
+[![Version](https://img.shields.io/badge/version-1.1.3-teal.svg)](https://github.com/Nsnnam/xml-3176-data-hub)
 [![Platform](https://img.shields.io/badge/platform-Windows%20Setup%20EXE%20%7C%20Web-blue.svg)](https://github.com/Nsnnam/xml-3176-data-hub/releases)
 [![Author](https://img.shields.io/badge/author-Nguy%E1%BB%85n%20S%C6%A1n%20Nam%20(Nsnnam)-0ea5e9.svg)](https://github.com/Nsnnam)
 [![License](https://img.shields.io/badge/license-MIT-slate.svg)](LICENSE)
@@ -18,8 +18,10 @@
 
 Khi dữ liệu Excel hoặc XML có kích thước lớn hoặc cần nạp nhiều đợt dữ liệu KCB cùng lúc, việc sử dụng trình duyệt web có thể bị giới hạn bộ nhớ RAM V8 JavaScript. **NsN XML DataHub 3176 Desktop** được thiết kế chuyên biệt để giải quyết triệt để vấn đề này:
 
-👉 **[⬇️ Tải NsN_XML_DataHub_3176_Setup_v1.1.2.exe (Bản Mới Nhất)](https://github.com/Nsnnam/xml-3176-data-hub/releases/download/v1.1.2/NsN_XML_DataHub_3176_Setup_v1.1.2.exe)**
+👉 **[⬇️ Tải NsN_XML_DataHub_3176_Setup_v1.1.3.exe (Bản Mới Nhất)](https://github.com/Nsnnam/xml-3176-data-hub/releases/download/v1.1.3/NsN_XML_DataHub_3176_Setup_v1.1.3.exe)**
 
+- **Sửa lỗi nút xuất Excel sau lọc (Bản Desktop EXE)**: Đồng bộ số lượng hồ sơ lọc trực tiếp vào hộp thoại xuất, cho phép tải dữ liệu ngay lập tức.
+- **Bổ sung Mã bệnh nhân (`MA_BN` dạng `BAxxxx`) & Mã bệnh án (`MA_BA`)**: Toàn bộ báo cáo xuất ra (Thuốc kê đơn, DVKT/VTYT, ICD, Khoa phòng, Danh sách KCB) đều có đầy đủ mã bệnh nhân dạng `BAxxxx` chuẩn HIS.
 - **Đồng bộ xuất Excel 100% qua khóa MA_LK**: Khi lọc bất kỳ thông tin nào, hệ thống đồng bộ toàn bộ dòng dữ liệu thực tế của cả 3 bảng XML1, XML2, XML3 theo đúng mã liên kết hồ sơ, không bao giờ lo file bị rỗng.
 - **Xem chi tiết & Xuất Excel 4 thẻ KPI tổng hợp**: Nhấp vào các thẻ Tổng Viện Phí, Thuốc, DVKT, Hồ Sơ KCB để xem bảng phân tích cơ cấu viện phí theo khoa phòng, danh mục thuốc, DVKT và xuất Excel 1-click.
 - **Hộp thoại chọn nơi lưu Windows Save As & Mở thư mục 1-click**: Chủ động chọn thư mục lưu, đặt tên file và bấm nút mở trực tiếp thư mục chứa file trong Windows Explorer.
@@ -33,7 +35,25 @@ Khi dữ liệu Excel hoặc XML có kích thước lớn hoặc cần nạp nhi
 
 ---
 
-## 🌟 Điểm Nổi Bật & Tính Năng Mới Trên Phiên Bản v1.1.2
+## 🌟 Điểm Nổi Bật & Tính Năng Mới Trên Phiên Bản v1.1.3
+
+### 🚀 1. Sửa Lỗi Không Bấm Được Nút Xuất File Excel Sau Khi Lọc (Bản Desktop EXE)
+- Khắc phục lỗi nút `[Tiến Hành Xuất File Excel]` bị vô hiệu hóa (disabled) khi mảng `dossiers` trình duyệt rỗng trên Desktop Mode.
+- Đồng bộ `totalCount` trực tiếp từ bộ đếm SQLite, hiển thị chính xác số lượng hồ sơ đã lọc và cho phép bấm xuất file tức thì.
+
+### 🏥 2. Bổ Sung Mã Bệnh Nhân (`MA_BN` dạng `BAxxxx`) & Mã Bệnh Án (`MA_BA`) Vào Tất Cả Báo Cáo Xuất Ra
+- Chuẩn hóa cột `MA_BN` (dạng `BAxxxx`) và `MA_BA` ngay sau cột `MA_LK` trong toàn bộ các file báo cáo Excel xuất ra:
+  - Báo cáo chi tiết Thuốc kê đơn (`DRUG`): Có đầy đủ `MA_LK`, `MA_BN`, `MA_BA`, `HO_TEN`, `SO_CCCD`, `MA_THE_BHYT`, `MA_THUOC`, `TEN_THUOC`...
+  - Báo cáo chi tiết DVKT & VTYT (`SERVICE`): Có đầy đủ `MA_LK`, `MA_BN`, `MA_BA`, `HO_TEN`, `SO_CCCD`, `MA_THE_BHYT`, `MA_DICH_VU`, `TEN_DICH_VU`...
+  - Báo cáo Hồ sơ theo Bệnh (`ICD`) và theo Khoa (`DEPARTMENT`).
+  - Báo cáo Danh sách Hồ sơ KCB từ thẻ KPI và sheet `XML1` khi xuất lọc.
+
+### 🛡️ 3. Tối Ưu An Toàn Hộp Thoại Lưu File (Save As Dialog) Trên Windows
+- Bọc cơ chế xử lý ngoại lệ an toàn cho Tkinter trong môi trường đa luồng FastAPI / PyInstaller, hỗ trợ cờ `cancelled: true` mượt mà khi người dùng nhấn Hủy và tự động fallback lưu an toàn vào thư mục mặc định.
+
+---
+
+## 🌟 Các Tính Năng Đã Có Từ Phiên Bản v1.1.2
 
 ### 🔄 1. Sửa Triệt Để Lỗi Xuất File Excel Trống Trơn & Đồng Bộ 100% Theo Khóa `MA_LK` (Mã Liên Kết)
 - **Đồng bộ liên kết dữ liệu thực tế giữa XML1, XML2, XML3**: Các file XML trong hồ sơ BHYT thực tế được gắn kết chặt chẽ qua trường `MA_LK`. Khi người dùng lọc bất kỳ tiêu chí nào (tìm thuốc, dịch vụ, mã bệnh, mã BN, khoa phòng, khoảng ngày...):

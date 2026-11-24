@@ -1412,15 +1412,18 @@ class XmlDatabase:
 
             if stat_type == 'ICD':
                 # Export all dossiers matching this ICD
-                cur.execute("SELECT raw_json FROM xml1 WHERE ma_benh_chinh = ? OR ma_benh_kt LIKE ?", (key_value, f"%{key_value}%"))
+                cur.execute("SELECT raw_json, ma_bn, ma_hsba, ma_the_bhyt FROM xml1 WHERE ma_benh_chinh = ? OR ma_benh_kt LIKE ?", (key_value, f"%{key_value}%"))
                 ws = wb.add_worksheet(f"ICD_{key_value}"[:30])
-                headers = ['MA_LK', 'MA_BN', 'HO_TEN', 'SO_CCCD', 'MA_BENH_CHINH', 'CHAN_DOAN_RV', 'NGAY_VAO', 'NGAY_RA', 'T_TONGCHI_BV', 'T_BHTT', 'MA_KHOA']
+                headers = ['MA_LK', 'MA_BN', 'MA_BA', 'HO_TEN', 'SO_CCCD', 'MA_THE_BHYT', 'MA_BENH_CHINH', 'CHAN_DOAN_RV', 'NGAY_VAO', 'NGAY_RA', 'T_TONGCHI_BV', 'T_BHTT', 'MA_KHOA']
                 for col_idx, h in enumerate(headers):
                     ws.write(0, col_idx, h, header_fmt)
 
                 row_idx = 1
                 for r in cur.fetchall():
-                    d = json.loads(r[0])
+                    d = json.loads(r[0]) if r[0] else {}
+                    d['MA_BN'] = r[1] or d.get('MA_BN') or d.get('MA_BA') or ''
+                    d['MA_BA'] = r[2] or d.get('MA_BA') or d.get('MA_HSBA') or r[1] or ''
+                    d['MA_THE_BHYT'] = r[3] or d.get('MA_THE_BHYT') or d.get('MA_THE') or ''
                     for col_idx, h in enumerate(headers):
                         val = d.get(h, '')
                         if 'T_' in h:
@@ -1430,23 +1433,36 @@ class XmlDatabase:
                     row_idx += 1
 
             elif stat_type == 'DRUG':
-                # Export all XML2 rows of this drug
+                # Export all XML2 rows of this drug with full patient identification (MA_BN, MA_BA, HO_TEN, SO_CCCD)
                 cur.execute("""
-                SELECT x2.raw_json, x1.ho_ten, x1.so_cccd
+                SELECT 
+                    x2.raw_json, 
+                    COALESCE(x1.ma_bn, '') as ma_bn,
+                    COALESCE(x1.ma_hsba, x1.ma_bn, '') as ma_ba,
+                    COALESCE(x1.ho_ten, '') as ho_ten, 
+                    COALESCE(x1.so_cccd, '') as so_cccd,
+                    COALESCE(x1.ma_the_bhyt, '') as ma_the_bhyt
                 FROM xml2 x2
                 LEFT JOIN xml1 x1 ON x1.ma_lk = x2.ma_lk
                 WHERE x2.ten_thuoc = ? OR x2.ma_thuoc = ?
                 """, (key_value, key_value))
                 ws = wb.add_worksheet("ChiTiet_Thuoc"[:30])
-                headers = ['MA_LK', 'HO_TEN', 'SO_CCCD', 'MA_THUOC', 'TEN_THUOC', 'HAM_LUONG', 'DON_VI_TINH', 'SO_LUONG', 'DON_GIA', 'THANH_TIEN_BV', 'NGAY_YL', 'MA_BAC_SI', 'TT_THAU']
+                headers = [
+                    'MA_LK', 'MA_BN', 'MA_BA', 'HO_TEN', 'SO_CCCD', 'MA_THE_BHYT',
+                    'MA_THUOC', 'TEN_THUOC', 'HAM_LUONG', 'DON_VI_TINH', 'SO_LUONG',
+                    'DON_GIA', 'THANH_TIEN_BV', 'NGAY_YL', 'MA_BAC_SI', 'TT_THAU'
+                ]
                 for col_idx, h in enumerate(headers):
                     ws.write(0, col_idx, h, header_fmt)
 
                 row_idx = 1
                 for r in cur.fetchall():
-                    d = json.loads(r[0])
-                    d['HO_TEN'] = r[1]
-                    d['SO_CCCD'] = r[2]
+                    d = json.loads(r[0]) if r[0] else {}
+                    d['MA_BN'] = r[1] or d.get('MA_BN') or d.get('MA_BA') or ''
+                    d['MA_BA'] = r[2] or d.get('MA_BA') or d.get('MA_HSBA') or r[1] or ''
+                    d['HO_TEN'] = r[3] or d.get('HO_TEN') or ''
+                    d['SO_CCCD'] = r[4] or d.get('SO_CCCD') or ''
+                    d['MA_THE_BHYT'] = r[5] or d.get('MA_THE_BHYT') or d.get('MA_THE') or ''
                     for col_idx, h in enumerate(headers):
                         val = d.get(h, '')
                         if h in ['SO_LUONG', 'DON_GIA', 'THANH_TIEN_BV']:
@@ -1456,23 +1472,36 @@ class XmlDatabase:
                     row_idx += 1
 
             elif stat_type == 'SERVICE':
-                # Export all XML3 rows of this service
+                # Export all XML3 rows of this service with full patient identification (MA_BN, MA_BA, HO_TEN, SO_CCCD)
                 cur.execute("""
-                SELECT x3.raw_json, x1.ho_ten, x1.so_cccd
+                SELECT 
+                    x3.raw_json, 
+                    COALESCE(x1.ma_bn, '') as ma_bn,
+                    COALESCE(x1.ma_hsba, x1.ma_bn, '') as ma_ba,
+                    COALESCE(x1.ho_ten, '') as ho_ten, 
+                    COALESCE(x1.so_cccd, '') as so_cccd,
+                    COALESCE(x1.ma_the_bhyt, '') as ma_the_bhyt
                 FROM xml3 x3
                 LEFT JOIN xml1 x1 ON x1.ma_lk = x3.ma_lk
                 WHERE x3.ten_dich_vu = ? OR x3.ma_dich_vu = ? OR x3.ten_vat_tu = ?
                 """, (key_value, key_value, key_value))
                 ws = wb.add_worksheet("ChiTiet_DVKT"[:30])
-                headers = ['MA_LK', 'HO_TEN', 'SO_CCCD', 'MA_DICH_VU', 'TEN_DICH_VU', 'MA_NHOM', 'SO_LUONG', 'DON_GIA_BV', 'THANH_TIEN_BV', 'NGAY_YL', 'NGAY_TH_YL', 'NGAY_KQ', 'MA_MAY', 'NGUOI_THUC_HIEN']
+                headers = [
+                    'MA_LK', 'MA_BN', 'MA_BA', 'HO_TEN', 'SO_CCCD', 'MA_THE_BHYT',
+                    'MA_DICH_VU', 'TEN_DICH_VU', 'MA_NHOM', 'SO_LUONG', 'DON_GIA_BV',
+                    'THANH_TIEN_BV', 'NGAY_YL', 'NGAY_TH_YL', 'NGAY_KQ', 'MA_MAY', 'NGUOI_THUC_HIEN'
+                ]
                 for col_idx, h in enumerate(headers):
                     ws.write(0, col_idx, h, header_fmt)
 
                 row_idx = 1
                 for r in cur.fetchall():
-                    d = json.loads(r[0])
-                    d['HO_TEN'] = r[1]
-                    d['SO_CCCD'] = r[2]
+                    d = json.loads(r[0]) if r[0] else {}
+                    d['MA_BN'] = r[1] or d.get('MA_BN') or d.get('MA_BA') or ''
+                    d['MA_BA'] = r[2] or d.get('MA_BA') or d.get('MA_HSBA') or r[1] or ''
+                    d['HO_TEN'] = r[3] or d.get('HO_TEN') or ''
+                    d['SO_CCCD'] = r[4] or d.get('SO_CCCD') or ''
+                    d['MA_THE_BHYT'] = r[5] or d.get('MA_THE_BHYT') or d.get('MA_THE') or ''
                     for col_idx, h in enumerate(headers):
                         val = d.get(h, '')
                         if h in ['SO_LUONG', 'DON_GIA_BV', 'THANH_TIEN_BV']:
@@ -1483,15 +1512,18 @@ class XmlDatabase:
 
             elif stat_type == 'DEPARTMENT':
                 # Export all dossiers in this department
-                cur.execute("SELECT raw_json FROM xml1 WHERE ma_khoa = ?", (key_value,))
+                cur.execute("SELECT raw_json, ma_bn, ma_hsba, ma_the_bhyt FROM xml1 WHERE ma_khoa = ?", (key_value,))
                 ws = wb.add_worksheet(f"Khoa_{key_value}"[:30])
-                headers = ['MA_LK', 'MA_BN', 'HO_TEN', 'SO_CCCD', 'MA_BENH_CHINH', 'CHAN_DOAN_RV', 'NGAY_VAO', 'NGAY_RA', 'T_TONGCHI_BV', 'T_BHTT', 'MA_KHOA']
+                headers = ['MA_LK', 'MA_BN', 'MA_BA', 'HO_TEN', 'SO_CCCD', 'MA_THE_BHYT', 'MA_BENH_CHINH', 'CHAN_DOAN_RV', 'NGAY_VAO', 'NGAY_RA', 'T_TONGCHI_BV', 'T_BHTT', 'MA_KHOA']
                 for col_idx, h in enumerate(headers):
                     ws.write(0, col_idx, h, header_fmt)
 
                 row_idx = 1
                 for r in cur.fetchall():
-                    d = json.loads(r[0])
+                    d = json.loads(r[0]) if r[0] else {}
+                    d['MA_BN'] = r[1] or d.get('MA_BN') or d.get('MA_BA') or ''
+                    d['MA_BA'] = r[2] or d.get('MA_BA') or d.get('MA_HSBA') or r[1] or ''
+                    d['MA_THE_BHYT'] = r[3] or d.get('MA_THE_BHYT') or d.get('MA_THE') or ''
                     for col_idx, h in enumerate(headers):
                         val = d.get(h, '')
                         if 'T_' in h:
@@ -1591,7 +1623,7 @@ class XmlDatabase:
                     ws1.write(0, c_idx, h, header_fmt)
 
                 cur.execute("""
-                SELECT x1.raw_json 
+                SELECT x1.raw_json, x1.ma_bn, x1.ma_hsba 
                 FROM xml1 x1 
                 JOIN temp_filtered_lks t ON x1.ma_lk = t.ma_lk 
                 ORDER BY x1.ma_lk DESC
@@ -1599,6 +1631,10 @@ class XmlDatabase:
                 r_idx = 1
                 for r in cur.fetchall():
                     rec = json.loads(r[0]) if r[0] else {}
+                    if not rec.get('MA_BN') and r[1]:
+                        rec['MA_BN'] = r[1]
+                    if not rec.get('MA_BA') and (r[2] or r[1]):
+                        rec['MA_BA'] = r[2] or r[1]
                     for c_idx, col_name in enumerate(XML1_COLUMNS):
                         write_val(ws1, r_idx, c_idx, col_name, rec.get(col_name, ''))
                     r_idx += 1
@@ -1762,6 +1798,7 @@ class XmlDatabase:
                     ma_lk as maLk,
                     ho_ten as hoTen,
                     ma_bn as maBn,
+                    COALESCE(ma_hsba, ma_bn, '') as maBa,
                     so_cccd as soCccd,
                     ma_the_bhyt as maThe,
                     ma_benh_chinh as maBenhChinh,
@@ -1843,21 +1880,22 @@ class XmlDatabase:
 
         elif kpi_type == 'DOSSIERS':
             ws = wb.add_worksheet("DanhSach_HoSo"[:30])
-            headers = ['STT', 'Mã LK', 'Mã BN', 'Họ Tên', 'CCCD', 'Thẻ BHYT', 'Mã Bệnh', 'Chẩn Đoán RV', 'Mã Khoa', 'Tổng Viện Phí', 'BHYT Trả', 'BN Trả']
+            headers = ['STT', 'Mã LK', 'Mã BN', 'Mã BA', 'Họ Tên', 'CCCD', 'Thẻ BHYT', 'Mã Bệnh', 'Chẩn Đoán RV', 'Mã Khoa', 'Tổng Viện Phí', 'BHYT Trả', 'BN Trả']
             for c, h in enumerate(headers): ws.write(0, c, h, header_fmt)
             for idx, item in enumerate(items, 1):
                 ws.write_number(idx, 0, idx, center_fmt)
                 ws.write_string(idx, 1, str(item.get('maLk', '')), border_fmt)
                 ws.write_string(idx, 2, str(item.get('maBn', '')), border_fmt)
-                ws.write_string(idx, 3, str(item.get('hoTen', '')), border_fmt)
-                ws.write_string(idx, 4, str(item.get('soCccd', '')), border_fmt)
-                ws.write_string(idx, 5, str(item.get('maThe', '')), border_fmt)
-                ws.write_string(idx, 6, str(item.get('maBenhChinh', '')), border_fmt)
-                ws.write_string(idx, 7, str(item.get('tenBenhChinh', '')), border_fmt)
-                ws.write_string(idx, 8, str(item.get('maKhoa', '')), border_fmt)
-                ws.write_number(idx, 9, float(item.get('tongChiBv') or 0), money_fmt)
-                ws.write_number(idx, 10, float(item.get('tongBhtt') or 0), money_fmt)
-                ws.write_number(idx, 11, float(item.get('tongBntt') or 0), money_fmt)
+                ws.write_string(idx, 3, str(item.get('maBa', '')), border_fmt)
+                ws.write_string(idx, 4, str(item.get('hoTen', '')), border_fmt)
+                ws.write_string(idx, 5, str(item.get('soCccd', '')), border_fmt)
+                ws.write_string(idx, 6, str(item.get('maThe', '')), border_fmt)
+                ws.write_string(idx, 7, str(item.get('maBenhChinh', '')), border_fmt)
+                ws.write_string(idx, 8, str(item.get('tenBenhChinh', '')), border_fmt)
+                ws.write_string(idx, 9, str(item.get('maKhoa', '')), border_fmt)
+                ws.write_number(idx, 10, float(item.get('tongChiBv') or 0), money_fmt)
+                ws.write_number(idx, 11, float(item.get('tongBhtt') or 0), money_fmt)
+                ws.write_number(idx, 12, float(item.get('tongBntt') or 0), money_fmt)
 
         wb.close()
         return {

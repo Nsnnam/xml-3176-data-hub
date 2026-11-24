@@ -71,7 +71,7 @@ for p in iscc_paths:
 if iscc_exe:
     iss_file = os.path.join(ROOT_DIR, "installer", "setup.iss")
     subprocess.run([iscc_exe, iss_file], check=True)
-    setup_file = os.path.join(setup_dir, "NsN_XML_DataHub_3176_Setup_v1.1.2.exe")
+    setup_file = os.path.join(setup_dir, "NsN_XML_DataHub_3176_Setup_v1.1.3.exe")
     if os.path.exists(setup_file):
         size_mb = os.path.getsize(setup_file) / (1024 * 1024)
         print(f"\n=======================================================")

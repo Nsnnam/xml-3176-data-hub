@@ -714,6 +714,7 @@ export const App: React.FC = () => {
         <ExportModal
           dossiers={browserFilteredHighlights.length > 0 ? browserFilteredHighlights.map(h => h.dossier) : browserDossiers}
           filters={filters}
+          totalCount={totalFilteredCount}
           onClose={() => setIsExportModalOpen(false)}
         />
       )}

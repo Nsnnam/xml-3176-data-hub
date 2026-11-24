@@ -113,7 +113,10 @@ export async function exportDossiersToExcel(
   const xml1Rows: any[][] = [Array.from(XML1_COLUMNS)];
   for (const d of dossiers) {
     if (d.xml1) {
-      xml1Rows.push(createRowFromHeaders(d.xml1, XML1_COLUMNS));
+      const rec = { ...d.xml1 };
+      if (!rec.MA_BN && d.maBn) rec.MA_BN = d.maBn;
+      if (!rec.MA_BA && (d.maBa || d.maBn)) rec.MA_BA = d.maBa || d.maBn;
+      xml1Rows.push(createRowFromHeaders(rec, XML1_COLUMNS));
     } else {
       // Build mock XML1 if only XML2/3 was loaded
       const mockX1: Record<string, any> = {
