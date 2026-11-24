@@ -440,6 +440,243 @@ class XmlDatabase:
             "recordCount": total_rows
         }
 
+    def import_xml_file(self, file_path: str, progress_callback=None) -> Dict[str, Any]:
+        """
+        Stream parses XML file according to Quyết định 3176 / 130 (15 tables)
+        Handles both plain XML and Base64 encoded NOIDUNGFILE tags
+        """
+        import xml.etree.ElementTree as ET
+        import base64
+        import json
+
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+        file_id = f"{file_name}_{int(time.time())}"
+
+        def get_child_text(elem, tag_name, default=''):
+            child = elem.find(tag_name)
+            if child is not None and child.text:
+                return child.text.strip()
+            for c in elem:
+                if c.tag.upper() == tag_name.upper() and c.text:
+                    return c.text.strip()
+            return default
+
+        def to_num(val, default=0.0):
+            try:
+                if val is None or val == '': return default
+                return float(str(val).replace(',', '.'))
+            except:
+                return default
+
+        total_rows = 0
+        batch_x1 = []
+        batch_x2 = []
+        batch_x3 = []
+        batch_size = 2000
+
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+
+            sql_x1 = """
+            INSERT OR REPLACE INTO xml1 (
+                ma_lk, stt, ma_bn, ho_ten, so_cccd, ngay_sinh, gioi_tinh, dia_chi,
+                ma_the_bhyt, ma_dkbd, chan_doan_vao, chan_doan_rv, ma_benh_chinh, ma_benh_kt,
+                ngay_vao, ngay_ra, ngay_ttoan, so_ngay_dtri, t_tongchi_bv, t_tongchi_bh,
+                t_bhtt, t_bntt, t_thuoc, t_vtyt, ma_loai_kcb, ma_khoa, ma_cskcb, ma_hsba,
+                file_id, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+
+            sql_x2 = """
+            INSERT INTO xml2 (
+                ma_lk, stt, ma_thuoc, ma_nhom, ten_thuoc, don_vi_tinh, ham_luong,
+                so_luong, don_gia, thanh_tien_bv, thanh_tien_bh, t_bhtt, t_bntt,
+                ma_khoa, ma_bac_si, ngay_yl, ngay_th_yl, tt_thau, file_id, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+
+            sql_x3 = """
+            INSERT INTO xml3 (
+                ma_lk, stt, ma_dich_vu, ma_vat_tu, ma_nhom, ten_dich_vu, ten_vat_tu,
+                don_vi_tinh, so_luong, don_gia_bv, don_gia_bh, thanh_tien_bv, thanh_tien_bh,
+                t_bhtt, t_bntt, ma_khoa, ma_bac_si, nguoi_thuc_hien, ma_benh, ngay_yl,
+                ngay_th_yl, ngay_kq, ma_may, tt_thau, file_id, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+
+            for event, elem in ET.iterparse(file_path, events=('end',)):
+                tag_upper = elem.tag.upper()
+
+                if tag_upper == 'FILEHOSO':
+                    loai_elem = elem.find('LOAIHOSO')
+                    loai = loai_elem.text.strip().upper() if loai_elem is not None and loai_elem.text else ''
+                    noidung_elem = elem.find('NOIDUNGFILE')
+
+                    content_root = None
+                    if noidung_elem is not None:
+                        if len(noidung_elem) > 0:
+                            content_root = noidung_elem
+                        elif noidung_elem.text:
+                            txt = noidung_elem.text.strip()
+                            if txt.startswith('<'):
+                                try: content_root = ET.fromstring(txt)
+                                except Exception: pass
+                            else:
+                                try:
+                                    decoded = base64.b64decode(txt).decode('utf-8', errors='replace')
+                                    content_root = ET.fromstring(decoded)
+                                except Exception: pass
+
+                    if content_root is not None:
+                        if loai == 'XML1':
+                            for th in content_root.iter():
+                                if th.tag.upper() == 'TONG_HOP':
+                                    ma_lk = get_child_text(th, 'MA_LK')
+                                    if not ma_lk: continue
+                                    rec = {c.tag.upper(): (c.text or '').strip() for c in th}
+                                    batch_x1.append((
+                                        ma_lk,
+                                        int(to_num(get_child_text(th, 'STT'))),
+                                        get_child_text(th, 'MA_BN'),
+                                        get_child_text(th, 'HO_TEN'),
+                                        get_child_text(th, 'SO_CCCD'),
+                                        get_child_text(th, 'NGAY_SINH'),
+                                        get_child_text(th, 'GIOI_TINH'),
+                                        get_child_text(th, 'DIA_CHI'),
+                                        get_child_text(th, 'MA_THE_BHYT'),
+                                        get_child_text(th, 'MA_DKBD'),
+                                        get_child_text(th, 'CHAN_DOAN_VAO'),
+                                        get_child_text(th, 'CHAN_DOAN_RV'),
+                                        get_child_text(th, 'MA_BENH_CHINH'),
+                                        get_child_text(th, 'MA_BENH_KT'),
+                                        get_child_text(th, 'NGAY_VAO'),
+                                        get_child_text(th, 'NGAY_RA'),
+                                        get_child_text(th, 'NGAY_TTOAN'),
+                                        to_num(get_child_text(th, 'SO_NGAY_DTRI')),
+                                        to_num(get_child_text(th, 'T_TONGCHI_BV')),
+                                        to_num(get_child_text(th, 'T_TONGCHI_BH')),
+                                        to_num(get_child_text(th, 'T_BHTT')),
+                                        to_num(get_child_text(th, 'T_BNTT')),
+                                        to_num(get_child_text(th, 'T_THUOC')),
+                                        to_num(get_child_text(th, 'T_VTYT')),
+                                        get_child_text(th, 'MA_LOAI_KCB'),
+                                        get_child_text(th, 'MA_KHOA'),
+                                        get_child_text(th, 'MA_CSKCB'),
+                                        get_child_text(th, 'MA_HSBA'),
+                                        file_id,
+                                        json.dumps(rec, ensure_ascii=False)
+                                    ))
+                                    total_rows += 1
+                                    if len(batch_x1) >= batch_size:
+                                        cur.executemany(sql_x1, batch_x1)
+                                        batch_x1 = []
+                                        if progress_callback: progress_callback(file_name, total_rows)
+
+                        elif loai == 'XML2':
+                            for ct in content_root.iter():
+                                if ct.tag.upper() == 'CHI_TIET_THUOC':
+                                    ma_lk = get_child_text(ct, 'MA_LK')
+                                    if not ma_lk: continue
+                                    rec = {c.tag.upper(): (c.text or '').strip() for c in ct}
+                                    batch_x2.append((
+                                        ma_lk,
+                                        int(to_num(get_child_text(ct, 'STT'))),
+                                        get_child_text(ct, 'MA_THUOC'),
+                                        get_child_text(ct, 'MA_NHOM'),
+                                        get_child_text(ct, 'TEN_THUOC'),
+                                        get_child_text(ct, 'DON_VI_TINH'),
+                                        get_child_text(ct, 'HAM_LUONG'),
+                                        to_num(get_child_text(ct, 'SO_LUONG')),
+                                        to_num(get_child_text(ct, 'DON_GIA_BV') or get_child_text(ct, 'DON_GIA')),
+                                        to_num(get_child_text(ct, 'THANH_TIEN_BV')),
+                                        to_num(get_child_text(ct, 'THANH_TIEN_BH')),
+                                        to_num(get_child_text(ct, 'T_BHTT')),
+                                        to_num(get_child_text(ct, 'T_BNTT')),
+                                        get_child_text(ct, 'MA_KHOA'),
+                                        get_child_text(ct, 'MA_BAC_SI'),
+                                        get_child_text(ct, 'NGAY_YL'),
+                                        get_child_text(ct, 'NGAY_TH_YL'),
+                                        get_child_text(ct, 'TT_THAU'),
+                                        file_id,
+                                        json.dumps(rec, ensure_ascii=False)
+                                    ))
+                                    total_rows += 1
+                                    if len(batch_x2) >= batch_size:
+                                        cur.executemany(sql_x2, batch_x2)
+                                        batch_x2 = []
+                                        if progress_callback: progress_callback(file_name, total_rows)
+
+                        elif loai == 'XML3':
+                            for ct in content_root.iter():
+                                if ct.tag.upper() == 'CHI_TIET_DVKT':
+                                    ma_lk = get_child_text(ct, 'MA_LK')
+                                    if not ma_lk: continue
+                                    rec = {c.tag.upper(): (c.text or '').strip() for c in ct}
+                                    batch_x3.append((
+                                        ma_lk,
+                                        int(to_num(get_child_text(ct, 'STT'))),
+                                        get_child_text(ct, 'MA_DICH_VU'),
+                                        get_child_text(ct, 'MA_VAT_TU'),
+                                        get_child_text(ct, 'MA_NHOM'),
+                                        get_child_text(ct, 'TEN_DICH_VU'),
+                                        get_child_text(ct, 'TEN_VAT_TU'),
+                                        get_child_text(ct, 'DON_VI_TINH'),
+                                        to_num(get_child_text(ct, 'SO_LUONG')),
+                                        to_num(get_child_text(ct, 'DON_GIA_BV')),
+                                        to_num(get_child_text(ct, 'DON_GIA_BH')),
+                                        to_num(get_child_text(ct, 'THANH_TIEN_BV')),
+                                        to_num(get_child_text(ct, 'THANH_TIEN_BH')),
+                                        to_num(get_child_text(ct, 'T_BHTT')),
+                                        to_num(get_child_text(ct, 'T_BNTT')),
+                                        get_child_text(ct, 'MA_KHOA'),
+                                        get_child_text(ct, 'MA_BAC_SI'),
+                                        get_child_text(ct, 'NGUOI_THUC_HIEN'),
+                                        get_child_text(ct, 'MA_BENH'),
+                                        get_child_text(ct, 'NGAY_YL'),
+                                        get_child_text(ct, 'NGAY_TH_YL'),
+                                        get_child_text(ct, 'NGAY_KQ'),
+                                        get_child_text(ct, 'MA_MAY'),
+                                        get_child_text(ct, 'TT_THAU'),
+                                        file_id,
+                                        json.dumps(rec, ensure_ascii=False)
+                                    ))
+                                    total_rows += 1
+                                    if len(batch_x3) >= batch_size:
+                                        cur.executemany(sql_x3, batch_x3)
+                                        batch_x3 = []
+                                        if progress_callback: progress_callback(file_name, total_rows)
+
+                    elem.clear()
+
+            # Flush remaining batches
+            if batch_x1: cur.executemany(sql_x1, batch_x1)
+            if batch_x2: cur.executemany(sql_x2, batch_x2)
+            if batch_x3: cur.executemany(sql_x3, batch_x3)
+
+            # Record file summary
+            cur.execute("""
+            INSERT OR REPLACE INTO imported_files (id, file_name, file_path, file_size, table_type, record_count, loaded_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+            """, (file_id, file_name, file_path, file_size, 'XML_PACKAGE', total_rows))
+
+            conn.commit()
+
+        return {
+            "id": file_id,
+            "fileName": file_name,
+            "fileSize": file_size,
+            "tableType": "XML_PACKAGE",
+            "recordCount": total_rows
+        }
+
+    def import_file(self, file_path: str, progress_callback=None) -> Dict[str, Any]:
+        """Dispatches file to XML or Excel parser based on extension"""
+        if file_path.lower().endswith('.xml'):
+            return self.import_xml_file(file_path, progress_callback)
+        else:
+            return self.import_excel_file(file_path, progress_callback)
+
     def get_stats(self) -> Dict[str, Any]:
         """
         Fast SQL aggregations for summary dashboard
@@ -593,12 +830,56 @@ class XmlDatabase:
             cur.execute("SELECT DISTINCT ma_khoa FROM xml1 WHERE ma_khoa IS NOT NULL AND ma_khoa != '' ORDER BY ma_khoa")
             depts = [r[0] for r in cur.fetchall()]
 
+            # Top 300 Patients (Mã BN)
+            cur.execute("""
+            SELECT ma_bn as code, ho_ten as name, COUNT(*) as count
+            FROM xml1 WHERE ma_bn IS NOT NULL AND ma_bn != ''
+            GROUP BY ma_bn
+            ORDER BY count DESC
+            LIMIT 300
+            """)
+            patients = [dict(r) for r in cur.fetchall()]
+
+            # Top 200 Cards (Mã thẻ BHYT)
+            cur.execute("""
+            SELECT ma_the_bhyt as code, ho_ten as name, COUNT(*) as count
+            FROM xml1 WHERE ma_the_bhyt IS NOT NULL AND ma_the_bhyt != ''
+            GROUP BY ma_the_bhyt
+            ORDER BY count DESC
+            LIMIT 200
+            """)
+            cards = [dict(r) for r in cur.fetchall()]
+
+            # Top 200 Doctors / Performers
+            cur.execute("""
+            SELECT nguoi_thuc_hien as code, nguoi_thuc_hien as name, COUNT(*) as count
+            FROM xml3 WHERE nguoi_thuc_hien IS NOT NULL AND nguoi_thuc_hien != ''
+            GROUP BY nguoi_thuc_hien
+            ORDER BY count DESC
+            LIMIT 200
+            """)
+            doctors = [dict(r) for r in cur.fetchall()]
+
+            # Top 200 Machines
+            cur.execute("""
+            SELECT ma_may as code, ten_dich_vu as name, COUNT(*) as count
+            FROM xml3 WHERE ma_may IS NOT NULL AND ma_may != ''
+            GROUP BY ma_may
+            ORDER BY count DESC
+            LIMIT 200
+            """)
+            machines = [dict(r) for r in cur.fetchall()]
+
             return {
                 "groups": groups,
                 "icds": icds,
                 "drugs": drugs,
                 "services": services,
-                "departments": depts
+                "departments": depts,
+                "patients": patients,
+                "cards": cards,
+                "doctors": doctors,
+                "machines": machines
             }
 
     def query_dossiers(self, filters: Dict[str, Any], page: int = 1, page_size: int = 25) -> Dict[str, Any]:
@@ -623,6 +904,11 @@ class XmlDatabase:
             picked_drugs = filters.get('pickedDrugs') or []
             picked_services = filters.get('pickedServices') or []
             picked_groups = filters.get('pickedGroups') or []
+            picked_patients = filters.get('pickedPatients') or []
+            picked_departments = filters.get('pickedDepartments') or []
+            picked_cards = filters.get('pickedCards') or []
+            picked_doctors = filters.get('pickedDoctors') or []
+            picked_machines = filters.get('pickedMachines') or []
             match_mode = filters.get('matchMode', 'OR') # OR or AND
 
             # Fast column criteria
@@ -780,6 +1066,31 @@ class XmlDatabase:
                 placeholders = ','.join(['?'] * len(picked_groups))
                 picked_subqueries.append(f"(EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND x2.ma_nhom IN ({placeholders})) OR EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ma_nhom IN ({placeholders})))")
                 params.extend(picked_groups * 2)
+
+            if picked_patients:
+                placeholders = ','.join(['?'] * len(picked_patients))
+                picked_subqueries.append(f"x1.ma_bn IN ({placeholders})")
+                params.extend(picked_patients)
+
+            if picked_departments:
+                placeholders = ','.join(['?'] * len(picked_departments))
+                picked_subqueries.append(f"x1.ma_khoa IN ({placeholders})")
+                params.extend(picked_departments)
+
+            if picked_cards:
+                placeholders = ','.join(['?'] * len(picked_cards))
+                picked_subqueries.append(f"x1.ma_the_bhyt IN ({placeholders})")
+                params.extend(picked_cards)
+
+            if picked_doctors:
+                placeholders = ','.join(['?'] * len(picked_doctors))
+                picked_subqueries.append(f"(EXISTS (SELECT 1 FROM xml2 x2 WHERE x2.ma_lk = x1.ma_lk AND x2.ma_bac_si IN ({placeholders})) OR EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND (x3.ma_bac_si IN ({placeholders}) OR x3.nguoi_thuc_hien IN ({placeholders}))))")
+                params.extend(picked_doctors * 3)
+
+            if picked_machines:
+                placeholders = ','.join(['?'] * len(picked_machines))
+                picked_subqueries.append(f"EXISTS (SELECT 1 FROM xml3 x3 WHERE x3.ma_lk = x1.ma_lk AND x3.ma_may IN ({placeholders}))")
+                params.extend(picked_machines)
 
             if picked_subqueries:
                 join_op = " AND " if match_mode == 'AND' else " OR "

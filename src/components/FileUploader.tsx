@@ -10,7 +10,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import type { ImportedFileSummary, XmlTableType } from '../types/xml';
-import { parseExcelFile, ParseResult } from '../utils/excelParser';
+import { parseAnyFile, ParseResult } from '../utils/excelParser';
 import { 
   isDesktopMode, 
   openNativeFileDialog, 
@@ -88,10 +88,13 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     setErrorMsg('');
 
     const results: ParseResult[] = [];
-    const fileArray = Array.from(files).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
+    const fileArray = Array.from(files).filter(f => {
+      const lower = f.name.toLowerCase();
+      return lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.xml');
+    });
 
     if (fileArray.length === 0) {
-      setErrorMsg('Vui lòng chọn file Excel có định dạng .xlsx hoặc .xls');
+      setErrorMsg('Vui lòng chọn file có định dạng Excel (.xlsx, .xls) hoặc XML (.xml)');
       setIsLoading(false);
       return;
     }
@@ -101,15 +104,15 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
         const file = fileArray[i];
         setProgressMsg(`Đang phân tích file ${i + 1}/${fileArray.length}: ${file.name}...`);
         await new Promise(r => setTimeout(r, 10));
-        const parsed = await parseExcelFile(file);
-        results.push(parsed);
+        const parsedList = await parseAnyFile(file);
+        results.push(...parsedList);
       }
 
       onFilesParsed(results);
       setProgressMsg('');
     } catch (err: any) {
       console.error('File parsing error:', err);
-      setErrorMsg(err.message || 'Lỗi khi đọc file Excel. Vui lòng kiểm tra lại file.');
+      setErrorMsg(err.message || 'Lỗi khi đọc file. Vui lòng kiểm tra lại cấu trúc file.');
     } finally {
       setIsLoading(false);
       if (fileInputRef.current) {
@@ -156,6 +159,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
         return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">XML2 (Thuốc)</span>;
       case 'XML3':
         return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-500/20 text-purple-400 border border-purple-500/30">XML3 (DVKT & VTYT)</span>;
+      case 'XML_PACKAGE':
+        return <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">XML (Gói 15 Bảng)</span>;
     }
   };
 
@@ -221,7 +226,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-teal-500/25 transition-all cursor-pointer disabled:opacity-50 flex-shrink-0"
           >
             <FolderOpen className="w-4 h-4" />
-            <span>Chọn File Excel Từ Ổ Đĩa...</span>
+            <span>Chọn File Excel / XML Từ Ổ Đĩa...</span>
           </button>
         </div>
       )}
@@ -242,7 +247,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".xlsx, .xls"
+          accept=".xlsx, .xls, .xml"
           onChange={handleFileChange}
           className="hidden"
           disabled={isLoading}
@@ -255,10 +260,10 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
 
           <div>
             <p className="text-sm font-semibold text-white">
-              Kéo thả các file Excel XML1, XML2, XML3 vào đây, hoặc <span className="text-teal-400 underline underline-offset-2">bấm để chọn file</span>
+              Kéo thả các file Excel XML1, XML2, XML3 hoặc file XML QĐ 3176 vào đây, hoặc <span className="text-teal-400 underline underline-offset-2">bấm để chọn file</span>
             </p>
             <p className="text-xs text-slate-500 mt-1">
-              Hỗ trợ nạp cùng lúc nhiều file .xlsx / .xls theo chuẩn QĐ 3176/QĐ-BYT
+              Hỗ trợ nạp cùng lúc nhiều file .xlsx / .xls / .xml theo chuẩn QĐ 3176/QĐ-BYT (15 bảng)
             </p>
           </div>
 
@@ -304,35 +309,46 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-52 overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto pr-1">
             {importedFiles.map((f) => (
               <div
                 key={f.id}
-                className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs hover:border-slate-700 transition-colors"
+                className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/90 text-xs hover:border-slate-700 transition-all shadow-sm flex flex-col justify-between gap-2"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileCheck2 className="w-4 h-4 text-teal-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-slate-200 font-medium truncate" title={f.fileName}>
-                      {f.fileName}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
-                      <span>{f.recordCount.toLocaleString('vi-VN')} dòng</span>
-                      <span>•</span>
-                      <span>{formatFileSize(f.fileSize)}</span>
-                    </div>
+                {/* Row 1: Badge + Size + Trash Action */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    {getTableTypeBadge(f.tableType)}
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {formatFileSize(f.fileSize)}
+                    </span>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {getTableTypeBadge(f.tableType)}
                   <button
                     onClick={() => handleRemoveSingle(f)}
-                    title="Xóa file này"
-                    className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/15 transition-colors cursor-pointer"
+                    title="Xóa file này khỏi danh sách"
+                    className="p-1 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-rose-500/15 transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
+                </div>
+
+                {/* Row 2: File Name with icon */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileCheck2 className="w-4 h-4 text-teal-400 flex-shrink-0" />
+                  <span className="text-slate-200 font-medium truncate text-xs" title={f.fileName}>
+                    {f.fileName}
+                  </span>
+                </div>
+
+                {/* Row 3: Records count */}
+                <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-800/60 font-mono">
+                  <span className="text-teal-400 font-bold">
+                    {f.recordCount.toLocaleString('vi-VN')} dòng
+                  </span>
+                  <span className="text-slate-500 text-[10px]">
+                    {typeof f.loadedAt === 'string' ? f.loadedAt : f.loadedAt ? new Date(f.loadedAt).toLocaleTimeString('vi-VN') : ''}
+                  </span>
                 </div>
               </div>
             ))}

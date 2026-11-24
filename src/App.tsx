@@ -223,6 +223,36 @@ export const App: React.FC = () => {
           count: s.count,
           extra: s.ma_nhom ? `Nhóm: ${s.ma_nhom}` : ''
         }));
+      } else if (type === 'PATIENTS') {
+        return (desktopDistinct.patients || []).map((p: any) => ({
+          code: p.code,
+          name: p.name || '',
+          count: p.count
+        }));
+      } else if (type === 'DEPARTMENTS') {
+        return (desktopDistinct.departments || []).map((d: any) => ({
+          code: typeof d === 'string' ? d : d.code,
+          name: typeof d === 'string' ? d : d.name,
+          count: typeof d === 'string' ? 1 : d.count || 1
+        }));
+      } else if (type === 'CARDS') {
+        return (desktopDistinct.cards || []).map((c: any) => ({
+          code: c.code,
+          name: c.name || '',
+          count: c.count
+        }));
+      } else if (type === 'DOCTORS') {
+        return (desktopDistinct.doctors || []).map((doc: any) => ({
+          code: doc.code,
+          name: doc.name || '',
+          count: doc.count
+        }));
+      } else if (type === 'MACHINES') {
+        return (desktopDistinct.machines || []).map((m: any) => ({
+          code: m.code,
+          name: m.name || '',
+          count: m.count
+        }));
       }
     }
 
@@ -270,6 +300,51 @@ export const App: React.FC = () => {
         }
       }
       return Array.from(svMap.entries()).map(([name, val]) => ({ code: val.code || name, name, count: val.count, extra: val.extra }));
+    } else if (type === 'PATIENTS') {
+      const pMap = new Map<string, { name: string; count: number }>();
+      for (const d of browserDossiers) {
+        if (d.maBn) {
+          const ex = pMap.get(d.maBn) || { name: d.hoTen || '', count: 0 };
+          ex.count++;
+          pMap.set(d.maBn, ex);
+        }
+      }
+      return Array.from(pMap.entries()).map(([code, val]) => ({ code, name: val.name, count: val.count }));
+    } else if (type === 'DEPARTMENTS') {
+      const dMap = new Map<string, number>();
+      for (const d of browserDossiers) {
+        const k = d.xml1?.MA_KHOA || d.maKhoa;
+        if (k) dMap.set(k, (dMap.get(k) || 0) + 1);
+      }
+      return Array.from(dMap.entries()).map(([code, count]) => ({ code, name: code, count }));
+    } else if (type === 'CARDS') {
+      const cMap = new Map<string, { name: string; count: number }>();
+      for (const d of browserDossiers) {
+        if (d.maThe) {
+          const ex = cMap.get(d.maThe) || { name: d.hoTen || '', count: 0 };
+          ex.count++;
+          cMap.set(d.maThe, ex);
+        }
+      }
+      return Array.from(cMap.entries()).map(([code, val]) => ({ code, name: val.name, count: val.count }));
+    } else if (type === 'DOCTORS') {
+      const docMap = new Map<string, number>();
+      for (const d of browserDossiers) {
+        for (const s of d.xml3) if (s.NGUOI_THUC_HIEN) docMap.set(s.NGUOI_THUC_HIEN, (docMap.get(s.NGUOI_THUC_HIEN) || 0) + 1);
+      }
+      return Array.from(docMap.entries()).map(([code, count]) => ({ code, name: code, count }));
+    } else if (type === 'MACHINES') {
+      const mMap = new Map<string, { name: string; count: number }>();
+      for (const d of browserDossiers) {
+        for (const s of d.xml3) {
+          if (s.MA_MAY) {
+            const ex = mMap.get(s.MA_MAY) || { name: s.TEN_DICH_VU || '', count: 0 };
+            ex.count++;
+            mMap.set(s.MA_MAY, ex);
+          }
+        }
+      }
+      return Array.from(mMap.entries()).map(([code, val]) => ({ code, name: val.name, count: val.count }));
     }
 
     return [];
@@ -290,6 +365,21 @@ export const App: React.FC = () => {
       case 'SERVICES':
         setFilters(f => ({ ...f, pickedServices: selectedCodes }));
         break;
+      case 'PATIENTS':
+        setFilters(f => ({ ...f, pickedPatients: selectedCodes }));
+        break;
+      case 'DEPARTMENTS':
+        setFilters(f => ({ ...f, pickedDepartments: selectedCodes }));
+        break;
+      case 'CARDS':
+        setFilters(f => ({ ...f, pickedCards: selectedCodes }));
+        break;
+      case 'DOCTORS':
+        setFilters(f => ({ ...f, pickedDoctors: selectedCodes }));
+        break;
+      case 'MACHINES':
+        setFilters(f => ({ ...f, pickedMachines: selectedCodes }));
+        break;
     }
   };
 
@@ -300,6 +390,12 @@ export const App: React.FC = () => {
       case 'ICD': return filters.pickedIcds || [];
       case 'DRUGS': return filters.pickedDrugs || [];
       case 'SERVICES': return filters.pickedServices || [];
+      case 'PATIENTS': return filters.pickedPatients || [];
+      case 'DEPARTMENTS': return filters.pickedDepartments || [];
+      case 'CARDS': return filters.pickedCards || [];
+      case 'DOCTORS': return filters.pickedDoctors || [];
+      case 'MACHINES': return filters.pickedMachines || [];
+      default: return [];
     }
   }, [pickerModal.type, filters]);
 

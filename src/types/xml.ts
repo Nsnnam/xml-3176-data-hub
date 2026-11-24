@@ -37,7 +37,7 @@ export const XML3_COLUMNS = [
   'DU_PHONG', 'MA_BA', 'HO_TEN', 'MA_THE', 'SOPHIEU'
 ] as const;
 
-export type XmlTableType = 'XML1' | 'XML2' | 'XML3';
+export type XmlTableType = 'XML1' | 'XML2' | 'XML3' | 'XML_PACKAGE';
 
 export type RawRecord = Record<string, any>;
 
@@ -249,6 +249,11 @@ export interface FilterState {
   pickedDrugs?: string[];
   pickedServices?: string[];
   pickedGroups?: string[];
+  pickedPatients?: string[];
+  pickedDepartments?: string[];
+  pickedCards?: string[];
+  pickedDoctors?: string[];
+  pickedMachines?: string[];
   matchMode?: 'AND' | 'OR';
   
   // Specific column criteria

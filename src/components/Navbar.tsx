@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Upload, 
   Download, 
@@ -6,9 +6,13 @@ import {
   Trash2, 
   Activity,
   Layers,
-  FolderOpen
+  FolderOpen,
+  Sun,
+  Moon,
+  Sparkles
 } from 'lucide-react';
 import { lockDailyAuth } from '../utils/auth';
+import { getStoredTheme, applyAppTheme, AppTheme } from '../utils/theme';
 
 interface NavbarProps {
   totalDossiers: number;
@@ -37,6 +41,17 @@ export const Navbar: React.FC<NavbarProps> = ({
   onLock,
   filteredCount
 }) => {
+  const [theme, setTheme] = useState<AppTheme>(getStoredTheme);
+
+  useEffect(() => {
+    applyAppTheme(theme);
+  }, [theme]);
+
+  const handleThemeChange = (newTheme: AppTheme) => {
+    setTheme(newTheme);
+    applyAppTheme(newTheme);
+  };
+
   const handleLockClick = () => {
     lockDailyAuth();
     onLock();
@@ -60,7 +75,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </span>
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">
-                  v1.0.0
+                  v1.1.0
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">
@@ -155,6 +170,49 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
 
           <div className="h-4 w-[1px] bg-slate-800 hidden md:block mx-1" />
+
+          {/* Theme Switcher: Y tế / Đen / Trắng */}
+          <div className="flex items-center p-0.5 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+            <button
+              type="button"
+              onClick={() => handleThemeChange('medical')}
+              title="Giao diện Y tế (Xanh Navy & Cyan lâm sàng)"
+              className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                theme === 'medical'
+                  ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+              <span className="hidden lg:inline">Y tế</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleThemeChange('dark')}
+              title="Giao diện Đen (Midnight pitch black)"
+              className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                theme === 'dark'
+                  ? 'bg-zinc-800 text-zinc-100 border border-zinc-700 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5 text-zinc-300" />
+              <span className="hidden lg:inline">Đen</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleThemeChange('light')}
+              title="Giao diện Trắng (Medical clean hospital white)"
+              className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer ${
+                theme === 'light'
+                  ? 'bg-white text-slate-900 border border-slate-300 shadow-sm font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden lg:inline">Trắng</span>
+            </button>
+          </div>
 
           <button
             onClick={handleLockClick}

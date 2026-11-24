@@ -87,6 +87,15 @@ export function parseXmlDate(val: any): ParsedDateResult {
 }
 
 /**
+ * Format date/datetime value into VN display string (DD/MM/YYYY or DD/MM/YYYY HH:mm)
+ */
+export function formatDateVN(val: any): string {
+  if (val === undefined || val === null || val === '') return '—';
+  const res = parseXmlDate(val);
+  return res.isValid ? (res.displayDateTime || res.displayDate) : String(val);
+}
+
+/**
  * Check if a YYYY-MM-DD string is within [fromDate, toDate]
  */
 export function isDateInRange(targetYmd: string | undefined, fromYmd: string, toYmd: string): boolean {

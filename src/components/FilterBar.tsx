@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Search, 
   Calendar, 
@@ -13,7 +13,13 @@ import {
   Stethoscope,
   Filter,
   SlidersHorizontal,
-  ChevronDown
+  ChevronDown,
+  Settings2,
+  UserCheck,
+  Building2,
+  CreditCard,
+  User,
+  Cpu
 } from 'lucide-react';
 import { 
   DateCriteriaType, 
@@ -22,6 +28,8 @@ import {
 } from '../types/xml';
 import { getDatePresets } from '../utils/dateUtils';
 import type { PickerType } from './InputPickerModal';
+import { loadQuickFilterConfig, QuickFilterConfigItem } from '../utils/filterConfig';
+import { QuickFilterSettingsModal } from './QuickFilterSettingsModal';
 
 interface FilterBarProps {
   filters: FilterState;
@@ -60,6 +68,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onOpenColumnFilters
 }) => {
   const presets = getDatePresets();
+  const [quickFilterConfigs, setQuickFilterConfigs] = useState<QuickFilterConfigItem[]>(loadQuickFilterConfig);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onFilterChange({ ...filters, searchQuery: e.target.value });
@@ -90,7 +100,19 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   };
 
   // Remove picked item
-  const handleRemovePicked = (category: 'pickedIcds' | 'pickedDrugs' | 'pickedServices' | 'pickedGroups', val: string) => {
+  const handleRemovePicked = (
+    category: 
+      | 'pickedIcds' 
+      | 'pickedDrugs' 
+      | 'pickedServices' 
+      | 'pickedGroups'
+      | 'pickedPatients'
+      | 'pickedDepartments'
+      | 'pickedCards'
+      | 'pickedDoctors'
+      | 'pickedMachines', 
+    val: string
+  ) => {
     const list = (filters[category] || []).filter(x => x !== val);
     onFilterChange({ ...filters, [category]: list });
   };
@@ -101,10 +123,45 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     onFilterChange({ ...filters, customRules: updated });
   };
 
+  const getFilterCount = (id: string) => {
+    switch (id) {
+      case 'GROUPS': return filters.pickedGroups?.length || 0;
+      case 'ICD': return filters.pickedIcds?.length || 0;
+      case 'DRUGS': return filters.pickedDrugs?.length || 0;
+      case 'SERVICES': return filters.pickedServices?.length || 0;
+      case 'PATIENTS': return filters.pickedPatients?.length || 0;
+      case 'DEPARTMENTS': return filters.pickedDepartments?.length || 0;
+      case 'CARDS': return filters.pickedCards?.length || 0;
+      case 'DOCTORS': return filters.pickedDoctors?.length || 0;
+      case 'MACHINES': return filters.pickedMachines?.length || 0;
+      default: return 0;
+    }
+  };
+
+  const renderPickerIcon = (id: string) => {
+    switch (id) {
+      case 'GROUPS': return <Layers className="w-3.5 h-3.5 text-teal-400" />;
+      case 'ICD': return <Activity className="w-3.5 h-3.5 text-cyan-400" />;
+      case 'DRUGS': return <Pill className="w-3.5 h-3.5 text-amber-400" />;
+      case 'SERVICES': return <Stethoscope className="w-3.5 h-3.5 text-purple-400" />;
+      case 'PATIENTS': return <UserCheck className="w-3.5 h-3.5 text-emerald-400" />;
+      case 'DEPARTMENTS': return <Building2 className="w-3.5 h-3.5 text-blue-400" />;
+      case 'CARDS': return <CreditCard className="w-3.5 h-3.5 text-pink-400" />;
+      case 'DOCTORS': return <User className="w-3.5 h-3.5 text-orange-400" />;
+      case 'MACHINES': return <Cpu className="w-3.5 h-3.5 text-indigo-400" />;
+      default: return <Filter className="w-3.5 h-3.5 text-slate-400" />;
+    }
+  };
+
   const totalPickedCount = (filters.pickedIcds?.length || 0) + 
                            (filters.pickedDrugs?.length || 0) + 
                            (filters.pickedServices?.length || 0) + 
-                           (filters.pickedGroups?.length || 0);
+                           (filters.pickedGroups?.length || 0) +
+                           (filters.pickedPatients?.length || 0) +
+                           (filters.pickedDepartments?.length || 0) +
+                           (filters.pickedCards?.length || 0) +
+                           (filters.pickedDoctors?.length || 0) +
+                           (filters.pickedMachines?.length || 0);
 
   // Count active specific column filters
   const activeColumnFilterCount = (filters.ketQuaDtri ? 1 : 0) +
@@ -237,64 +294,40 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <span>Nhặt thông tin lọc:</span>
           </span>
 
-          {/* Pick Groups */}
-          <button
-            type="button"
-            onClick={() => onOpenPicker('GROUPS')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-              (filters.pickedGroups?.length || 0) > 0
-                ? 'bg-teal-500/20 border-teal-500 text-teal-300 font-bold'
-                : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-teal-500/50 hover:text-white'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5 text-teal-400" />
-            <span>Mã Nhóm {filters.pickedGroups?.length ? `(${filters.pickedGroups.length})` : ''}</span>
-            <Plus className="w-3 h-3 text-slate-500" />
-          </button>
+          {/* Dynamic pickers configured by user */}
+          {quickFilterConfigs.filter(cfg => cfg.enabled).map(cfg => {
+            const count = getFilterCount(cfg.id);
+            const isPicked = count > 0;
+            return (
+              <button
+                key={cfg.id}
+                type="button"
+                onClick={() => onOpenPicker(cfg.id as PickerType)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
+                  isPicked
+                    ? 'bg-teal-500/20 border-teal-500 text-teal-300 font-bold shadow-sm'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-teal-500/50 hover:text-white'
+                }`}
+                title={`Nhặt danh sách ${cfg.customLabel || cfg.defaultLabel}`}
+              >
+                {renderPickerIcon(cfg.id)}
+                <span>
+                  {cfg.customLabel || cfg.defaultLabel} {count > 0 ? `(${count})` : ''}
+                </span>
+                <Plus className="w-3 h-3 text-slate-500" />
+              </button>
+            );
+          })}
 
-          {/* Pick ICD */}
+          {/* Quick Filter Configuration Modal Trigger */}
           <button
             type="button"
-            onClick={() => onOpenPicker('ICD')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-              (filters.pickedIcds?.length || 0) > 0
-                ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 font-bold'
-                : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-cyan-500/50 hover:text-white'
-            }`}
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-950/80 text-slate-400 hover:text-teal-300 hover:border-teal-500/40 transition-colors cursor-pointer text-xs"
+            title="Cài đặt cấu hình hiển thị bộ lọc nhanh (thêm trường, đổi tên hiển thị)"
           >
-            <Activity className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Mã ICD {filters.pickedIcds?.length ? `(${filters.pickedIcds.length})` : ''}</span>
-            <Plus className="w-3 h-3 text-slate-500" />
-          </button>
-
-          {/* Pick Drugs */}
-          <button
-            type="button"
-            onClick={() => onOpenPicker('DRUGS')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-              (filters.pickedDrugs?.length || 0) > 0
-                ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
-                : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-amber-500/50 hover:text-white'
-            }`}
-          >
-            <Pill className="w-3.5 h-3.5 text-amber-400" />
-            <span>Thuốc {filters.pickedDrugs?.length ? `(${filters.pickedDrugs.length})` : ''}</span>
-            <Plus className="w-3 h-3 text-slate-500" />
-          </button>
-
-          {/* Pick Services */}
-          <button
-            type="button"
-            onClick={() => onOpenPicker('SERVICES')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-              (filters.pickedServices?.length || 0) > 0
-                ? 'bg-purple-500/20 border-purple-500 text-purple-300 font-bold'
-                : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-purple-500/50 hover:text-white'
-            }`}
-          >
-            <Stethoscope className="w-3.5 h-3.5 text-purple-400" />
-            <span>DVKT & VTYT {filters.pickedServices?.length ? `(${filters.pickedServices.length})` : ''}</span>
-            <Plus className="w-3 h-3 text-slate-500" />
+            <Settings2 className="w-3.5 h-3.5 text-teal-400" />
+            <span className="hidden sm:inline">Cài đặt</span>
           </button>
         </div>
 
@@ -495,6 +528,56 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-500/30 text-purple-300 text-xs max-w-[200px] truncate">
                 <span className="truncate">DVKT: {s}</span>
                 <button onClick={() => handleRemovePicked('pickedServices', s)} className="hover:text-white flex-shrink-0 cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Patient Code Chips (MA_BN) */}
+            {filters.pickedPatients?.map(p => (
+              <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
+                <span>Mã BN: {p}</span>
+                <button onClick={() => handleRemovePicked('pickedPatients', p)} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Department Chips (MA_KHOA) */}
+            {filters.pickedDepartments?.map(d => (
+              <span key={d} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/15 border border-blue-500/30 text-blue-300 text-xs font-mono">
+                <span>Khoa: {d}</span>
+                <button onClick={() => handleRemovePicked('pickedDepartments', d)} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Card Chips (MA_THE_BHYT) */}
+            {filters.pickedCards?.map(c => (
+              <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-pink-500/15 border border-pink-500/30 text-pink-300 text-xs font-mono">
+                <span>Thẻ: {c}</span>
+                <button onClick={() => handleRemovePicked('pickedCards', c)} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Doctor Chips (NGUOI_THUC_HIEN) */}
+            {filters.pickedDoctors?.map(doc => (
+              <span key={doc} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs">
+                <span>BS/Người TH: {doc}</span>
+                <button onClick={() => handleRemovePicked('pickedDoctors', doc)} className="hover:text-white cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+
+            {/* Machine Chips (MA_MAY) */}
+            {filters.pickedMachines?.map(m => (
+              <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-mono">
+                <span>Máy: {m}</span>
+                <button onClick={() => handleRemovePicked('pickedMachines', m)} className="hover:text-white cursor-pointer">
                   <X className="w-3 h-3" />
                 </button>
               </span>
@@ -720,6 +803,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Quick Filter Configuration Modal */}
+      <QuickFilterSettingsModal
+        isOpen={isSettingsModalOpen}
+        config={quickFilterConfigs}
+        onSave={(newCfg) => setQuickFilterConfigs(newCfg)}
+        onClose={() => setIsSettingsModalOpen(false)}
+      />
     </div>
   );
 };

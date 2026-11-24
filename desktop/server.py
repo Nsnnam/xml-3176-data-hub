@@ -60,6 +60,11 @@ class QueryPayload(BaseModel):
     pickedDrugs: Optional[List[str]] = []
     pickedServices: Optional[List[str]] = []
     pickedGroups: Optional[List[str]] = []
+    pickedPatients: Optional[List[str]] = []
+    pickedDepartments: Optional[List[str]] = []
+    pickedCards: Optional[List[str]] = []
+    pickedDoctors: Optional[List[str]] = []
+    pickedMachines: Optional[List[str]] = []
     matchMode: Optional[str] = "OR"
     ketQuaDtri: Optional[str] = ""
     maLoaiRv: Optional[str] = ""
@@ -84,8 +89,13 @@ def open_native_file_dialog():
     root.withdraw()
     root.attributes('-topmost', True)
     file_paths = filedialog.askopenfilenames(
-        title="Chọn các file Excel XML 1, 2, 3 chuẩn QĐ 3176",
-        filetypes=[("Excel Files", "*.xlsx *.xls"), ("All Files", "*.*")]
+        title="Chọn các file Excel & XML (15 Bảng) chuẩn QĐ 3176/QĐ-BYT",
+        filetypes=[
+            ("Tất cả tệp XML & Excel", "*.xlsx *.xls *.xml"),
+            ("Tệp XML gói QĐ 3176 (*.xml)", "*.xml"),
+            ("Tệp Excel (*.xlsx;*.xls)", "*.xlsx *.xls"),
+            ("Tất cả tệp (*.*)", "*.*")
+        ]
     )
     root.destroy()
     return {"filePaths": list(file_paths)}
@@ -116,7 +126,7 @@ def start_file_import(payload: Dict[str, Any] = Body(...)):
             try:
                 import_progress["current_file"] = os.path.basename(path)
                 import_progress["current_rows"] = 0
-                db.import_excel_file(path, progress_callback=on_prog)
+                db.import_file(path, progress_callback=on_prog)
                 import_progress["completed_files"] += 1
             except Exception as e:
                 import_progress["error"] = f"Lỗi đọc file {os.path.basename(path)}: {str(e)}"

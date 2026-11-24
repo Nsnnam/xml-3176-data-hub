@@ -151,3 +151,135 @@ export async function parseExcelFile(file: File): Promise<ParseResult> {
     detectedHeaders
   };
 }
+
+function decodeBase64Utf8(b64: string): string {
+  try {
+    const clean = b64.replace(/\s+/g, '');
+    const binStr = atob(clean);
+    const bytes = new Uint8Array(binStr.length);
+    for (let i = 0; i < binStr.length; i++) {
+      bytes[i] = binStr.charCodeAt(i);
+    }
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Parses QĐ 3176 / 130 XML file (with up to 15 tables and Base64 content)
+ */
+export async function parseXmlFile(file: File): Promise<ParseResult[]> {
+  const text = await file.text();
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(text, 'text/xml');
+
+  const xml1Records: RawRecord[] = [];
+  const xml2Records: RawRecord[] = [];
+  const xml3Records: RawRecord[] = [];
+
+  const fileHoSoList = xmlDoc.getElementsByTagName('FILEHOSO');
+
+  const extractNodes = (doc: Document | Element, tagName: string): RawRecord[] => {
+    const nodes = doc.getElementsByTagName(tagName);
+    const results: RawRecord[] = [];
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const rec: RawRecord = {};
+      for (let j = 0; j < node.children.length; j++) {
+        const child = node.children[j];
+        rec[child.tagName.toUpperCase()] = (child.textContent || '').trim();
+      }
+      if (rec.MA_LK) {
+        results.push(rec);
+      }
+    }
+    return results;
+  };
+
+  if (fileHoSoList.length > 0) {
+    for (let i = 0; i < fileHoSoList.length; i++) {
+      const fhs = fileHoSoList[i];
+      const loaiElem = fhs.getElementsByTagName('LOAIHOSO')[0];
+      const loai = (loaiElem?.textContent || '').trim().toUpperCase();
+      const noidungElem = fhs.getElementsByTagName('NOIDUNGFILE')[0];
+      if (!noidungElem) continue;
+
+      let subDoc: Document | Element | null = null;
+      if (noidungElem.children.length > 0) {
+        subDoc = noidungElem;
+      } else {
+        const contentStr = (noidungElem.textContent || '').trim();
+        if (contentStr.startsWith('<')) {
+          subDoc = parser.parseFromString(contentStr, 'text/xml');
+        } else if (contentStr) {
+          const decoded = decodeBase64Utf8(contentStr);
+          if (decoded) {
+            subDoc = parser.parseFromString(decoded, 'text/xml');
+          }
+        }
+      }
+
+      if (subDoc) {
+        if (loai === 'XML1') {
+          xml1Records.push(...extractNodes(subDoc, 'TONG_HOP'));
+        } else if (loai === 'XML2') {
+          xml2Records.push(...extractNodes(subDoc, 'CHI_TIET_THUOC'));
+        } else if (loai === 'XML3') {
+          xml3Records.push(...extractNodes(subDoc, 'CHI_TIET_DVKT'));
+        }
+      }
+    }
+  } else {
+    // Standalone XML format
+    xml1Records.push(...extractNodes(xmlDoc, 'TONG_HOP'));
+    xml2Records.push(...extractNodes(xmlDoc, 'CHI_TIET_THUOC'));
+    xml3Records.push(...extractNodes(xmlDoc, 'CHI_TIET_DVKT'));
+  }
+
+  const results: ParseResult[] = [];
+  if (xml1Records.length > 0) {
+    results.push({
+      tableType: 'XML1',
+      records: xml1Records,
+      fileName: file.name,
+      fileSize: file.size,
+      rowCount: xml1Records.length,
+      detectedHeaders: Object.keys(xml1Records[0] || {})
+    });
+  }
+  if (xml2Records.length > 0) {
+    results.push({
+      tableType: 'XML2',
+      records: xml2Records,
+      fileName: file.name,
+      fileSize: file.size,
+      rowCount: xml2Records.length,
+      detectedHeaders: Object.keys(xml2Records[0] || {})
+    });
+  }
+  if (xml3Records.length > 0) {
+    results.push({
+      tableType: 'XML3',
+      records: xml3Records,
+      fileName: file.name,
+      fileSize: file.size,
+      rowCount: xml3Records.length,
+      detectedHeaders: Object.keys(xml3Records[0] || {})
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Universal file parser: handles both Excel (.xlsx, .xls) and XML (.xml) files
+ */
+export async function parseAnyFile(file: File): Promise<ParseResult[]> {
+  if (file.name.toLowerCase().endsWith('.xml')) {
+    return parseXmlFile(file);
+  } else {
+    const single = await parseExcelFile(file);
+    return [single];
+  }
+}
