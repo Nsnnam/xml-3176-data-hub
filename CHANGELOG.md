@@ -4,6 +4,32 @@ Tất cả các thay đổi đáng chú ý của dự án **NsN XML DataHub 3176
 
 ---
 
+## [v1.1.2] - 2026-11-24
+
+### 🔄 1. Sửa Triệt Để Lỗi Xuất File Excel Trống Trơn & Đồng Bộ 100% Theo Khóa `MA_LK` (Mã Liên Kết)
+- **Đồng bộ liên kết dữ liệu thực tế giữa XML1, XML2, XML3**: Các file XML trong hồ sơ BHYT thực tế được gắn kết chặt chẽ qua trường `MA_LK`. Khi người dùng lọc bất kỳ tiêu chí nào (tìm thuốc, dịch vụ, mã bệnh, mã BN, khoa phòng, khoảng ngày...):
+  - Hệ thống tự động xác định chính xác danh sách toàn bộ `MA_LK` của các hồ sơ thỏa mãn điều kiện lọc.
+  - Trên bản Desktop EXE, việc trích xuất được chuyển thẳng xuống động cơ SQLite nhúng cục bộ (`desktop/db.py`) thông qua bảng tạm `temp_filtered_lks` siêu tốc, loại bỏ triệt để vấn đề chỉ xuất dữ liệu của trang xem trước trên UI.
+  - Xuất Excel đồng bộ toàn diện theo 4 tùy chọn chuẩn:
+    - **Trọn bộ 3 bảng (ALL_THREE)**: 1 file Excel gồm 3 sheets (`XML1`, `XML2`, `XML3`) được đồng bộ 100% dòng dữ liệu thực tế theo các `MA_LK` đã lọc. Đầy đủ 65 cột XML1, 43 cột XML2, 51 cột XML3 theo đúng chuẩn QĐ 3176/QĐ-BYT.
+    - **Bảng 1 (XML1 - Tổng hợp KCB)**: Đầy đủ tất cả các hồ sơ thỏa mãn tiêu chí lọc.
+    - **Bảng 2 (XML2 - Danh mục Thuốc)**: Toàn bộ các dòng thuốc được kê cho các hồ sơ đã lọc thông qua `MA_LK`.
+    - **Bảng 3 (XML3 - DVKT & VTYT)**: Toàn bộ các dòng DVKT, xét nghiệm, CĐHA, vật tư y tế của các hồ sơ đã lọc thông qua `MA_LK`.
+  - Khắc phục hoàn toàn tình trạng sheet XML2 và XML3 bị trống trơn chỉ có tiêu đề.
+  - Tốc độ xuất hàng trăm nghìn bản ghi chỉ mất 1-2 giây với định dạng số tiền, mã căn cước, ngày tháng giữ nguyên số 0 ở đầu.
+
+### 📊 2. Sửa Lỗi Click Vào 4 Thẻ KPI Tổng Hợp Không Hiển Thị Dữ Liệu Chi Tiết (Bản Desktop EXE)
+- **Khắc phục lỗi "Hiển thị: 0 mục"**: Giải quyết triệt để tình trạng khi nhấp vào 4 thẻ KPI lớn trên màn hình chính ("HỒ SƠ KCB", "TỔNG VIỆN PHÍ", "THUỐC (XML2)", "DVKT & VTYT (XML3)"), modal mở ra nhưng bảng chi tiết bị rỗng không có dữ liệu.
+- **Tích hợp API truy vấn tổng hợp từ SQLite Desktop Backend** (`/api/kpi/breakdown`):
+  - **Thẻ Tổng Viện Phí (`COST`)**: Hiển thị bảng phân tích cơ cấu viện phí chi tiết theo từng khoa phòng điều trị (Mã khoa, Số lượng hồ sơ, Tổng viện phí BV, Quỹ BHYT chi trả, Bệnh nhân chi trả, Tỷ lệ BHYT %).
+  - **Thẻ Thuốc (`DRUGS`)**: Hiển thị bảng tổng hợp toàn bộ danh mục thuốc kê đơn trong kỳ (Mã thuốc, Tên thuốc / biệt dược, Hoạt chất / hàm lượng, ĐVT, Lượt kê, Tổng số lượng, Tổng thành tiền).
+  - **Thẻ DVKT & VTYT (`SERVICES`)**: Hiển thị bảng tổng hợp dịch vụ kỹ thuật, xét nghiệm, CĐHA, vật tư y tế (Mã DVKT/VTYT, Tên dịch vụ, Mã nhóm, Lượt chỉ định, Tổng số lượng, Tổng thành tiền).
+  - **Thẻ Hồ Sơ KCB (`DOSSIERS`)**: Hiển thị danh sách hồ sơ khám chữa bệnh chi tiết.
+- **Tìm kiếm tức thì ngay trong Modal**: Hỗ trợ ô tìm kiếm trong bảng chi tiết với cơ chế debounce 150ms phản hồi mượt mà.
+- **Nút [Xuất Excel] chi tiết ngay trong Modal**: Cho phép xuất trực tiếp toàn bộ bảng dữ liệu phân tích chi tiết của thẻ KPI ra file Excel thông qua hộp thoại Windows Save As hoặc thư mục mặc định đã cấu hình, kèm đường dẫn và nút mở thư mục 1-click.
+
+---
+
 ## [v1.1.1] - 2026-11-24
 
 ### 📁 1. Cấu Hình Nơi Lưu & Hộp Thoại Chọn Vị Trí Khi Xuất File Excel (Bản Desktop EXE)

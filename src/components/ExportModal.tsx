@@ -17,6 +17,7 @@ import {
   saveDesktopExportConfig, 
   chooseDesktopExportDir, 
   openDesktopFileLocation,
+  exportDesktopFilteredExcel,
   DesktopExportConfig 
 } from '../utils/desktopBridge';
 
@@ -87,20 +88,37 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     try {
       await new Promise(r => setTimeout(r, 60));
 
-      const options: ExportOptions = {
-        tableChoice,
-        onlyItemsInDateRange,
-        fromDate: filters.fromDate,
-        toDate: filters.toDate,
-        dateField: filters.dateCriteria
-      };
+      if (isDesktop) {
+        // Native Desktop Export from SQLite directly (100% synchronized by MA_LK)
+        const res = await exportDesktopFilteredExcel(filters, tableChoice, onlyItemsInDateRange);
+        if (res.cancelled) {
+          setIsExporting(false);
+          return;
+        }
+        if (!res.success) {
+          throw new Error('Không thể xuất dữ liệu từ cơ sở dữ liệu Desktop.');
+        }
+        setExportResult({
+          totalExported: res.rowCount,
+          fileName: res.fileName,
+          filePath: res.filePath
+        });
+      } else {
+        const options: ExportOptions = {
+          tableChoice,
+          onlyItemsInDateRange,
+          fromDate: filters.fromDate,
+          toDate: filters.toDate,
+          dateField: filters.dateCriteria
+        };
 
-      const result = await exportDossiersToExcel(dossiers, options);
-      if (result.cancelled) {
-        setIsExporting(false);
-        return;
+        const result = await exportDossiersToExcel(dossiers, options);
+        if (result.cancelled) {
+          setIsExporting(false);
+          return;
+        }
+        setExportResult(result);
       }
-      setExportResult(result);
     } catch (err: any) {
       console.error('Export error:', err);
       setExportError(err.message || 'Lỗi khi xuất file Excel. Vui lòng thử lại.');
@@ -165,7 +183,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-teal-400 font-bold">
-                  {(totalXml1 + totalXml2 + totalXml3).toLocaleString('vi-VN')} dòng
+                  {isDesktop ? 'Đồng bộ 3 bảng' : `${(totalXml1 + totalXml2 + totalXml3).toLocaleString('vi-VN')} dòng`}
                 </span>
               </label>
 
@@ -188,7 +206,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-blue-400 font-bold">
-                  {totalXml1.toLocaleString('vi-VN')} hồ sơ
+                  {isDesktop ? 'Toàn bộ hồ sơ' : `${totalXml1.toLocaleString('vi-VN')} hồ sơ`}
                 </span>
               </label>
 
@@ -211,7 +229,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-amber-400 font-bold">
-                  {totalXml2.toLocaleString('vi-VN')} dòng
+                  {isDesktop ? 'Theo MA_LK' : `${totalXml2.toLocaleString('vi-VN')} dòng`}
                 </span>
               </label>
 
@@ -234,7 +252,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-purple-400 font-bold">
-                  {totalXml3.toLocaleString('vi-VN')} dòng
+                  {isDesktop ? 'Theo MA_LK' : `${totalXml3.toLocaleString('vi-VN')} dòng`}
                 </span>
               </label>
             </div>

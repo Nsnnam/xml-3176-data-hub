@@ -75,7 +75,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </span>
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">
-                  v1.1.1
+                  v1.1.2
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">

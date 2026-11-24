@@ -385,7 +385,122 @@ def export_statistic(payload: StatExportPayload):
         "rowCount": res.get("rowCount", 0)
     }
 
-# 7. Static files (React build dist)
+# 7. Export Filtered Excel (Synchronized across XML1, XML2, XML3 by MA_LK)
+class FilteredExportPayload(BaseModel):
+    filters: Dict[str, Any]
+    tableChoice: Optional[str] = "ALL_THREE" # 'ALL_THREE' | 'XML1' | 'XML2' | 'XML3'
+    onlyItemsInDateRange: Optional[bool] = False
+    customFileName: Optional[str] = ""
+
+@app.post("/api/export/filtered-excel")
+def export_filtered_excel(payload: FilteredExportPayload):
+    cfg = load_export_config()
+    default_dir = cfg.get("defaultDir") or get_default_downloads_dir()
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+
+    if payload.tableChoice == 'XML1':
+        default_name = f"XML1_Filtered_3176_{timestamp}.xlsx"
+    elif payload.tableChoice == 'XML2':
+        default_name = f"XML2_Thuoc_Filtered_3176_{timestamp}.xlsx"
+    elif payload.tableChoice == 'XML3':
+        default_name = f"XML3_DVKT_Filtered_3176_{timestamp}.xlsx"
+    else:
+        default_name = f"XML_TronBo_123_Filtered_3176_{timestamp}.xlsx"
+
+    if payload.customFileName:
+        default_name = payload.customFileName
+
+    if cfg.get("askEveryTime", True):
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        chosen_path = filedialog.asksaveasfilename(
+            title="Chọn nơi lưu file Excel xuất dữ liệu đã lọc (QĐ 3176)",
+            initialdir=default_dir,
+            initialfile=default_name,
+            defaultextension=".xlsx",
+            filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
+        )
+        root.destroy()
+        if not chosen_path:
+            return {"success": False, "cancelled": True}
+        out_path = chosen_path
+    else:
+        out_path = os.path.join(default_dir, default_name)
+
+    res = db.export_filtered_excel(
+        filters=payload.filters,
+        table_choice=payload.tableChoice or "ALL_THREE",
+        output_path=out_path,
+        only_in_date_range=bool(payload.onlyItemsInDateRange)
+    )
+
+    if cfg.get("autoOpenFolder") and os.path.exists(out_path):
+        try:
+            subprocess.Popen(f'explorer /select,"{os.path.abspath(out_path)}"')
+        except Exception:
+            pass
+
+    return res
+
+# 8. KPI Detail Breakdown & KPI Export
+class KpiBreakdownPayload(BaseModel):
+    type: str # 'COST' | 'DRUGS' | 'SERVICES' | 'DOSSIERS'
+    search: Optional[str] = ""
+
+class KpiExportPayload(BaseModel):
+    type: str # 'COST' | 'DRUGS' | 'SERVICES' | 'DOSSIERS'
+    search: Optional[str] = ""
+
+@app.post("/api/kpi/breakdown")
+def get_kpi_breakdown(payload: KpiBreakdownPayload):
+    items = db.get_kpi_breakdown(payload.type, payload.search or "")
+    return {"items": items}
+
+@app.post("/api/kpi/export")
+def export_kpi_table(payload: KpiExportPayload):
+    cfg = load_export_config()
+    default_dir = cfg.get("defaultDir") or get_default_downloads_dir()
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+
+    name_map = {
+        'COST': 'CoCauVienPhi_TheoKhoaPhong',
+        'DRUGS': 'DanhMuc_Thuoc_KeDon',
+        'SERVICES': 'DanhMuc_DVKT_VTYT',
+        'DOSSIERS': 'DanhSach_HoSo_KCB'
+    }
+    prefix = name_map.get(payload.type, 'ThongKe_ChiTiet')
+    default_name = f"{prefix}_3176_{timestamp}.xlsx"
+
+    if cfg.get("askEveryTime", True):
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        chosen_path = filedialog.asksaveasfilename(
+            title="Chọn nơi lưu file thống kê chi tiết Excel",
+            initialdir=default_dir,
+            initialfile=default_name,
+            defaultextension=".xlsx",
+            filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
+        )
+        root.destroy()
+        if not chosen_path:
+            return {"success": False, "cancelled": True}
+        out_path = chosen_path
+    else:
+        out_path = os.path.join(default_dir, default_name)
+
+    res = db.export_kpi_table_to_excel(payload.type, payload.search or "", out_path)
+
+    if cfg.get("autoOpenFolder") and os.path.exists(out_path):
+        try:
+            subprocess.Popen(f'explorer /select,"{os.path.abspath(out_path)}"')
+        except Exception:
+            pass
+
+    return res
+
+# 9. Static files (React build dist)
 DIST_DIR = os.path.join(BASE_DIR, 'dist')
 if os.path.exists(DIST_DIR):
     app.mount("/", StaticFiles(directory=DIST_DIR, html=True), name="static")

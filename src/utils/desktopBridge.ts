@@ -131,3 +131,41 @@ export async function openDesktopFileLocation(path: string): Promise<{ success: 
   });
   return res.json();
 }
+
+export async function exportDesktopFilteredExcel(
+  filters: any, 
+  tableChoice: string = 'ALL_THREE', 
+  onlyItemsInDateRange: boolean = false,
+  customFileName?: string
+): Promise<{ success: boolean; filePath: string; fileName: string; rowCount: number; counts?: { xml1: number; xml2: number; xml3: number }; cancelled?: boolean }> {
+  const res = await fetch(`${BASE_URL}/api/export/filtered-excel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filters, tableChoice, onlyItemsInDateRange, customFileName })
+  });
+  return res.json();
+}
+
+export async function getDesktopKpiBreakdown(
+  type: string, 
+  search: string = ''
+): Promise<{ items: any[] }> {
+  const res = await fetch(`${BASE_URL}/api/kpi/breakdown`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, search })
+  });
+  return res.json();
+}
+
+export async function exportDesktopKpiTable(
+  type: string, 
+  search: string = ''
+): Promise<{ success: boolean; filePath: string; fileName: string; rowCount: number; cancelled?: boolean }> {
+  const res = await fetch(`${BASE_URL}/api/kpi/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, search })
+  });
+  return res.json();
+}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
   Download, 
@@ -11,11 +11,18 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   ExternalLink,
-  FolderOpen
+  FolderOpen,
+  Loader2
 } from 'lucide-react';
 import type { DossierGroup, SummaryStats } from '../types/xml';
 import { formatVND, formatDateVN } from '../utils/dateUtils';
-import { isDesktopMode, exportDesktopStatistic, openDesktopFileLocation } from '../utils/desktopBridge';
+import { 
+  isDesktopMode, 
+  exportDesktopStatistic, 
+  openDesktopFileLocation,
+  getDesktopKpiBreakdown,
+  exportDesktopKpiTable
+} from '../utils/desktopBridge';
 import { exportDossiersToExcel, ExportResult } from '../utils/excelExporter';
 
 export type KpiModalType = 'DOSSIERS' | 'COST' | 'DRUGS' | 'SERVICES';
@@ -39,6 +46,31 @@ export const KpiDetailModal: React.FC<KpiDetailModalProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [exportedFilePath, setExportedFilePath] = useState<string | null>(null);
+
+  // Desktop engine data state
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [desktopItems, setDesktopItems] = useState<any[]>([]);
+  const [isLoadingDesktop, setIsLoadingDesktop] = useState(false);
+
+  useEffect(() => {
+    const desktopEnv = isDesktopMode();
+    setIsDesktop(desktopEnv);
+    if (desktopEnv) {
+      setIsLoadingDesktop(true);
+      const timer = setTimeout(() => {
+        getDesktopKpiBreakdown(type, search)
+          .then(res => {
+            setDesktopItems(res.items || []);
+            setIsLoadingDesktop(false);
+          })
+          .catch(err => {
+            console.error('Lỗi truy vấn KPI từ Desktop:', err);
+            setIsLoadingDesktop(false);
+          });
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [type, search]);
 
   // Aggregated data for Drugs
   const aggregatedDrugs = useMemo(() => {
@@ -155,27 +187,39 @@ export const KpiDetailModal: React.FC<KpiDetailModalProps> = ({
     setToastMsg(null);
     setExportedFilePath(null);
     try {
-      let result: ExportResult | undefined;
-      if (type === 'DOSSIERS' || type === 'COST') {
-        result = await exportDossiersToExcel(filteredDossiers.length > 0 ? filteredDossiers : dossiers, {
-          tableChoice: type === 'COST' ? 'ALL_THREE' : 'XML1'
-        });
-      } else if (type === 'DRUGS') {
-        result = await exportDossiersToExcel(dossiers, {
-          tableChoice: 'XML2'
-        });
-      } else if (type === 'SERVICES') {
-        result = await exportDossiersToExcel(dossiers, {
-          tableChoice: 'XML3'
-        });
-      }
+      if (isDesktop) {
+        const result = await exportDesktopKpiTable(type, search);
+        if (result && !result.cancelled) {
+          if (result.filePath) {
+            setExportedFilePath(result.filePath);
+            setToastMsg(`Đã xuất thành công ${result.rowCount.toLocaleString('vi-VN')} dòng vào: ${result.filePath}`);
+          } else {
+            setToastMsg(`Đã xuất thành công ${result.rowCount.toLocaleString('vi-VN')} dòng vào file ${result.fileName}!`);
+          }
+        }
+      } else {
+        let result: ExportResult | undefined;
+        if (type === 'DOSSIERS' || type === 'COST') {
+          result = await exportDossiersToExcel(filteredDossiers.length > 0 ? filteredDossiers : dossiers, {
+            tableChoice: type === 'COST' ? 'ALL_THREE' : 'XML1'
+          });
+        } else if (type === 'DRUGS') {
+          result = await exportDossiersToExcel(dossiers, {
+            tableChoice: 'XML2'
+          });
+        } else if (type === 'SERVICES') {
+          result = await exportDossiersToExcel(dossiers, {
+            tableChoice: 'XML3'
+          });
+        }
 
-      if (result && !result.cancelled) {
-        if (result.filePath) {
-          setExportedFilePath(result.filePath);
-          setToastMsg(`Đã xuất thành công ${result.totalExported.toLocaleString('vi-VN')} dòng vào: ${result.filePath}`);
-        } else {
-          setToastMsg(`Đã xuất thành công ${result.totalExported.toLocaleString('vi-VN')} dòng vào file ${result.fileName}!`);
+        if (result && !result.cancelled) {
+          if (result.filePath) {
+            setExportedFilePath(result.filePath);
+            setToastMsg(`Đã xuất thành công ${result.totalExported.toLocaleString('vi-VN')} dòng vào: ${result.filePath}`);
+          } else {
+            setToastMsg(`Đã xuất thành công ${result.totalExported.toLocaleString('vi-VN')} dòng vào file ${result.fileName}!`);
+          }
         }
       }
     } catch (err: any) {
@@ -393,9 +437,12 @@ export const KpiDetailModal: React.FC<KpiDetailModalProps> = ({
           <div className="text-xs text-slate-400 font-medium">
             Hiển thị:{' '}
             <strong className="text-teal-400 font-mono">
-              {type === 'DRUGS' ? filteredDrugs.length :
-               type === 'SERVICES' ? filteredServices.length :
-               filteredDossiers.length}
+              {isDesktop 
+                ? desktopItems.length.toLocaleString('vi-VN') 
+                : (type === 'DRUGS' ? filteredDrugs.length :
+                   type === 'SERVICES' ? filteredServices.length :
+                   type === 'COST' ? aggregatedDepartments.length :
+                   filteredDossiers.length).toLocaleString('vi-VN')}
             </strong>{' '}
             mục
           </div>
@@ -403,204 +450,218 @@ export const KpiDetailModal: React.FC<KpiDetailModalProps> = ({
 
         {/* Main Content Table Area */}
         <div className="flex-1 overflow-y-auto p-4 max-h-[55vh]">
-          {/* Table for DOSSIERS */}
-          {type === 'DOSSIERS' && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
-                    <th className="py-2.5 px-3 w-12 text-center">STT</th>
-                    <th className="py-2.5 px-3">Mã LK / Mã BN</th>
-                    <th className="py-2.5 px-3">Họ và Tên</th>
-                    <th className="py-2.5 px-3">CCCD / Mã Thẻ</th>
-                    <th className="py-2.5 px-3">Vào / Ra Viện</th>
-                    <th className="py-2.5 px-3">Chẩn Đoán / ICD</th>
-                    <th className="py-2.5 px-3">Khoa</th>
-                    <th className="py-2.5 px-3 text-right">Tổng Chi (VNĐ)</th>
-                    <th className="py-2.5 px-3 text-center w-16">Xem</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {filteredDossiers.slice(0, 150).map((d, idx) => (
-                    <tr key={d.maLk || d.xml1?.MA_LK || idx} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
-                      <td className="py-2 px-3">
-                        <span className="font-mono font-bold text-teal-400 block">{d.maLk || d.xml1?.MA_LK}</span>
-                        <span className="font-mono text-[11px] text-slate-400">{d.maBn || d.xml1?.MA_BN}</span>
-                      </td>
-                      <td className="py-2 px-3">
-                        <span className="font-semibold text-slate-200 block">{d.hoTen || d.xml1?.HO_TEN}</span>
-                        <span className="text-[11px] text-slate-400">{(d.xml1?.GIOI_TINH === 1 || d.xml1?.GIOI_TINH === '1') ? 'Nam' : 'Nữ'} • {formatDateVN(d.xml1?.NGAY_SINH)}</span>
-                      </td>
-                      <td className="py-2 px-3 font-mono text-[11px]">
-                        <span className="text-slate-300 block">{d.soCccd || d.xml1?.SO_CCCD || '—'}</span>
-                        <span className="text-cyan-400">{d.maThe || d.xml1?.MA_THE_BHYT}</span>
-                      </td>
-                      <td className="py-2 px-3 text-[11px] text-slate-400">
-                        <span>{formatDateVN(d.ngayVao || d.xml1?.NGAY_VAO)}</span>
-                        <br />
-                        <span>{formatDateVN(d.ngayRa || d.xml1?.NGAY_RA)}</span>
-                      </td>
-                      <td className="py-2 px-3 max-w-xs">
-                        <span className="px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-400 font-mono font-bold text-[10px] mr-1">
-                          {d.maBenhChinh || d.xml1?.MA_BENH_CHINH}
-                        </span>
-                        <span className="text-[11px] text-slate-300 truncate" title={d.tenBenhChinh || d.xml1?.CHAN_DOAN_RV}>
-                          {d.tenBenhChinh || d.xml1?.CHAN_DOAN_RV}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 font-mono text-slate-300">{d.maKhoa || d.xml1?.MA_KHOA}</td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">
-                        {formatVND(d.tongChiBv || d.xml1?.T_TONGCHI_BV || d.xml1?.T_TONGCHI_BH)}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        {onSelectDossier && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onSelectDossier(d);
-                              onClose();
-                            }}
-                            className="p-1 rounded text-teal-400 hover:bg-teal-500/20"
-                            title="Xem chi tiết hồ sơ"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {isLoadingDesktop ? (
+            <div className="py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <Loader2 className="w-7 h-7 animate-spin text-teal-400" />
+              <span className="text-xs font-medium">Đang tải dữ liệu chi tiết từ cơ sở dữ liệu SQLite Desktop...</span>
             </div>
-          )}
-
-          {/* Table for COST (Departments Breakdown) */}
-          {type === 'COST' && (
-            <div className="space-y-4">
-              <div className="border border-slate-800 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
-                      <th className="py-2.5 px-3 w-12 text-center">STT</th>
-                      <th className="py-2.5 px-3">Mã Khoa Điều Trị</th>
-                      <th className="py-2.5 px-3 text-right">Số Lượng Hồ Sơ</th>
-                      <th className="py-2.5 px-3 text-right">Tổng Viện Phí (BV)</th>
-                      <th className="py-2.5 px-3 text-right">Quỹ BHYT Trả</th>
-                      <th className="py-2.5 px-3 text-right">Bệnh Nhân Trả</th>
-                      <th className="py-2.5 px-3 text-center w-24">Tỷ Lệ BHYT</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {aggregatedDepartments.map((dept, idx) => {
-                      const ratio = dept.totalBV > 0 ? (dept.totalBH / dept.totalBV) * 100 : 0;
-                      return (
-                        <tr key={dept.code} className="hover:bg-slate-800/40 transition-colors">
+          ) : (
+            <>
+              {/* Table for DOSSIERS */}
+              {type === 'DOSSIERS' && (
+                <div className="border border-slate-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+                        <th className="py-2.5 px-3 w-12 text-center">STT</th>
+                        <th className="py-2.5 px-3">Mã LK / Mã BN</th>
+                        <th className="py-2.5 px-3">Họ và Tên</th>
+                        <th className="py-2.5 px-3">CCCD / Mã Thẻ</th>
+                        <th className="py-2.5 px-3">Vào / Ra Viện</th>
+                        <th className="py-2.5 px-3">Chẩn Đoán / ICD</th>
+                        <th className="py-2.5 px-3">Khoa</th>
+                        <th className="py-2.5 px-3 text-right">Tổng Chi (VNĐ)</th>
+                        <th className="py-2.5 px-3 text-center w-16">Xem</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {(isDesktop ? desktopItems : filteredDossiers).slice(0, 200).map((d: any, idx: number) => (
+                        <tr key={d.maLk || d.xml1?.MA_LK || idx} className="hover:bg-slate-800/40 transition-colors">
                           <td className="py-2 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
-                          <td className="py-2 px-3 font-mono font-bold text-teal-400 flex items-center gap-1.5">
-                            <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                            <span>{dept.code}</span>
+                          <td className="py-2 px-3">
+                            <span className="font-mono font-bold text-teal-400 block">{d.maLk || d.xml1?.MA_LK}</span>
+                            <span className="font-mono text-[11px] text-slate-400">{d.maBn || d.xml1?.MA_BN}</span>
                           </td>
-                          <td className="py-2 px-3 text-right font-mono text-slate-200">
-                            {dept.count.toLocaleString('vi-VN')}
+                          <td className="py-2 px-3">
+                            <span className="font-semibold text-slate-200 block">{d.hoTen || d.xml1?.HO_TEN}</span>
+                            <span className="text-[11px] text-slate-400">
+                              {(d.xml1?.GIOI_TINH === 1 || d.xml1?.GIOI_TINH === '1') ? 'Nam' : 'Nữ'} • {formatDateVN(d.xml1?.NGAY_SINH || d.ngaySinh)}
+                            </span>
                           </td>
+                          <td className="py-2 px-3 font-mono text-[11px]">
+                            <span className="text-slate-300 block">{d.soCccd || d.xml1?.SO_CCCD || '—'}</span>
+                            <span className="text-cyan-400">{d.maThe || d.xml1?.MA_THE_BHYT}</span>
+                          </td>
+                          <td className="py-2 px-3 text-[11px] text-slate-400">
+                            <span>{formatDateVN(d.ngayVao || d.xml1?.NGAY_VAO)}</span>
+                            <br />
+                            <span>{formatDateVN(d.ngayRa || d.xml1?.NGAY_RA)}</span>
+                          </td>
+                          <td className="py-2 px-3 max-w-xs">
+                            <span className="px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-400 font-mono font-bold text-[10px] mr-1">
+                              {d.maBenhChinh || d.xml1?.MA_BENH_CHINH}
+                            </span>
+                            <span className="text-[11px] text-slate-300 truncate" title={d.tenBenhChinh || d.xml1?.CHAN_DOAN_RV}>
+                              {d.tenBenhChinh || d.xml1?.CHAN_DOAN_RV}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 font-mono text-slate-300">{d.maKhoa || d.xml1?.MA_KHOA}</td>
                           <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">
-                            {formatVND(dept.totalBV)}
+                            {formatVND(d.tongChiBv || d.xml1?.T_TONGCHI_BV || d.xml1?.T_TONGCHI_BH)}
                           </td>
-                          <td className="py-2 px-3 text-right font-mono text-teal-400">
-                            {formatVND(dept.totalBH)}
-                          </td>
-                          <td className="py-2 px-3 text-right font-mono text-amber-400">
-                            {formatVND(dept.totalBN)}
-                          </td>
-                          <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-300">
-                            {ratio.toFixed(1)}%
+                          <td className="py-2 px-3 text-center">
+                            {onSelectDossier && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSelectDossier(d);
+                                  onClose();
+                                }}
+                                className="p-1 rounded text-teal-400 hover:bg-teal-500/20"
+                                title="Xem chi tiết hồ sơ"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
-          {/* Table for DRUGS (XML2) */}
-          {type === 'DRUGS' && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
-                    <th className="py-2.5 px-3 w-12 text-center">STT</th>
-                    <th className="py-2.5 px-3">Mã Thuốc</th>
-                    <th className="py-2.5 px-3">Tên Thuốc / Biệt Dược</th>
-                    <th className="py-2.5 px-3">Hoạt Chất / Hàm Lượng</th>
-                    <th className="py-2.5 px-3 text-center w-16">ĐVT</th>
-                    <th className="py-2.5 px-3 text-right">Lượt Kê</th>
-                    <th className="py-2.5 px-3 text-right">Tổng Số Lượng</th>
-                    <th className="py-2.5 px-3 text-right">Tổng Thành Tiền (VNĐ)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {filteredDrugs.slice(0, 200).map((drug, idx) => (
-                    <tr key={drug.code + '_' + idx} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
-                      <td className="py-2 px-3 font-mono font-bold text-amber-400">{drug.code}</td>
-                      <td className="py-2 px-3 font-medium text-slate-200">{drug.name}</td>
-                      <td className="py-2 px-3 text-slate-400 text-[11px]">{drug.activeIngredient || '—'}</td>
-                      <td className="py-2 px-3 text-center text-slate-400">{drug.unit || '—'}</td>
-                      <td className="py-2 px-3 text-right font-mono text-slate-300">{drug.count.toLocaleString('vi-VN')}</td>
-                      <td className="py-2 px-3 text-right font-mono font-semibold text-cyan-400">
-                        {drug.totalQty.toLocaleString('vi-VN')}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">
-                        {formatVND(drug.totalCost)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+              {/* Table for COST (Departments Breakdown) */}
+              {type === 'COST' && (
+                <div className="space-y-4">
+                  <div className="border border-slate-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+                          <th className="py-2.5 px-3 w-12 text-center">STT</th>
+                          <th className="py-2.5 px-3">Mã Khoa Điều Trị</th>
+                          <th className="py-2.5 px-3 text-right">Số Lượng Hồ Sơ</th>
+                          <th className="py-2.5 px-3 text-right">Tổng Viện Phí (BV)</th>
+                          <th className="py-2.5 px-3 text-right">Quỹ BHYT Trả</th>
+                          <th className="py-2.5 px-3 text-right">Bệnh Nhân Trả</th>
+                          <th className="py-2.5 px-3 text-center w-24">Tỷ Lệ BHYT</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60">
+                        {(isDesktop ? desktopItems : aggregatedDepartments).map((dept: any, idx: number) => {
+                          const total_bv = Number(dept.totalBV) || 0;
+                          const total_bh = Number(dept.totalBH) || 0;
+                          const total_bn = Number(dept.totalBN) || 0;
+                          const ratio = total_bv > 0 ? (total_bh / total_bv) * 100 : 0;
+                          return (
+                            <tr key={dept.code + '_' + idx} className="hover:bg-slate-800/40 transition-colors">
+                              <td className="py-2 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
+                              <td className="py-2 px-3 font-mono font-bold text-teal-400 flex items-center gap-1.5">
+                                <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                                <span>{dept.code}</span>
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-slate-200">
+                                {Number(dept.count || 0).toLocaleString('vi-VN')}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">
+                                {formatVND(total_bv)}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-teal-400">
+                                {formatVND(total_bh)}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-amber-400">
+                                {formatVND(total_bn)}
+                              </td>
+                              <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-300">
+                                {ratio.toFixed(1)}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
-          {/* Table for SERVICES (XML3) */}
-          {type === 'SERVICES' && (
-            <div className="border border-slate-800 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
-                    <th className="py-2.5 px-3 w-12 text-center">STT</th>
-                    <th className="py-2.5 px-3">Mã Dịch Vụ</th>
-                    <th className="py-2.5 px-3">Tên Dịch Vụ Kỹ Thuật / VTYT</th>
-                    <th className="py-2.5 px-3 text-center w-20">Mã Nhóm</th>
-                    <th className="py-2.5 px-3 text-right">Lượt Chỉ Định</th>
-                    <th className="py-2.5 px-3 text-right">Tổng Số Lượng</th>
-                    <th className="py-2.5 px-3 text-right">Tổng Thành Tiền (VNĐ)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {filteredServices.slice(0, 200).map((srv, idx) => (
-                    <tr key={srv.code + '_' + idx} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-2 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
-                      <td className="py-2 px-3 font-mono font-bold text-purple-400">{srv.code}</td>
-                      <td className="py-2 px-3 font-medium text-slate-200">{srv.name}</td>
-                      <td className="py-2 px-3 text-center">
-                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
-                          Nhóm {srv.group}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono text-slate-300">{srv.count.toLocaleString('vi-VN')}</td>
-                      <td className="py-2 px-3 text-right font-mono font-semibold text-cyan-400">
-                        {srv.totalQty.toLocaleString('vi-VN')}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">
-                        {formatVND(srv.totalCost)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+              {/* Table for DRUGS (XML2) */}
+              {type === 'DRUGS' && (
+                <div className="border border-slate-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+                        <th className="py-2.5 px-3 w-12 text-center">STT</th>
+                        <th className="py-2.5 px-3">Mã Thuốc</th>
+                        <th className="py-2.5 px-3">Tên Thuốc / Biệt Dược</th>
+                        <th className="py-2.5 px-3">Hoạt Chất / Hàm Lượng</th>
+                        <th className="py-2.5 px-3 text-center w-16">ĐVT</th>
+                        <th className="py-2.5 px-3 text-right">Lượt Kê</th>
+                        <th className="py-2.5 px-3 text-right">Tổng Số Lượng</th>
+                        <th className="py-2.5 px-3 text-right">Tổng Thành Tiền (VNĐ)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {(isDesktop ? desktopItems : filteredDrugs).slice(0, 200).map((drug: any, idx: number) => (
+                        <tr key={drug.code + '_' + idx} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-2 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
+                          <td className="py-2 px-3 font-mono font-bold text-amber-400">{drug.code}</td>
+                          <td className="py-2 px-3 font-medium text-slate-200">{drug.name}</td>
+                          <td className="py-2 px-3 text-slate-400 text-[11px]">{drug.activeIngredient || '—'}</td>
+                          <td className="py-2 px-3 text-center text-slate-400">{drug.unit || '—'}</td>
+                          <td className="py-2 px-3 text-right font-mono text-slate-300">{Number(drug.count || 0).toLocaleString('vi-VN')}</td>
+                          <td className="py-2 px-3 text-right font-mono font-semibold text-cyan-400">
+                            {Number(drug.totalQty || 0).toLocaleString('vi-VN')}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">
+                            {formatVND(drug.totalCost || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Table for SERVICES (XML3) */}
+              {type === 'SERVICES' && (
+                <div className="border border-slate-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+                        <th className="py-2.5 px-3 w-12 text-center">STT</th>
+                        <th className="py-2.5 px-3">Mã Dịch Vụ</th>
+                        <th className="py-2.5 px-3">Tên Dịch Vụ Kỹ Thuật / VTYT</th>
+                        <th className="py-2.5 px-3 text-center w-20">Mã Nhóm</th>
+                        <th className="py-2.5 px-3 text-right">Lượt Chỉ Định</th>
+                        <th className="py-2.5 px-3 text-right">Tổng Số Lượng</th>
+                        <th className="py-2.5 px-3 text-right">Tổng Thành Tiền (VNĐ)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {(isDesktop ? desktopItems : filteredServices).slice(0, 200).map((srv: any, idx: number) => (
+                        <tr key={srv.code + '_' + idx} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-2 px-3 text-center text-slate-500 font-mono">{idx + 1}</td>
+                          <td className="py-2 px-3 font-mono font-bold text-purple-400">{srv.code}</td>
+                          <td className="py-2 px-3 font-medium text-slate-200">{srv.name}</td>
+                          <td className="py-2 px-3 text-center">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px] border border-slate-700">
+                              Nhóm {srv.group || '—'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono text-slate-300">{Number(srv.count || 0).toLocaleString('vi-VN')}</td>
+                          <td className="py-2 px-3 text-right font-mono font-semibold text-cyan-400">
+                            {Number(srv.totalQty || 0).toLocaleString('vi-VN')}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono font-bold text-emerald-400">
+                            {formatVND(srv.totalCost || 0)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </div>
 

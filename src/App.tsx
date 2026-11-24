@@ -588,6 +588,7 @@ export const App: React.FC = () => {
             {/* Stats Overview with 1-click Excel download */}
             <StatsOverview
               stats={currentStats}
+              dossiers={browserDossiers}
               onExportStatItem={handleExportStatItem}
             />
 
@@ -711,7 +712,7 @@ export const App: React.FC = () => {
       {/* Modal: Export to Excel */}
       {isExportModalOpen && (
         <ExportModal
-          dossiers={displayItems.map(h => h.dossier)}
+          dossiers={browserFilteredHighlights.length > 0 ? browserFilteredHighlights.map(h => h.dossier) : browserDossiers}
           filters={filters}
           onClose={() => setIsExportModalOpen(false)}
         />
