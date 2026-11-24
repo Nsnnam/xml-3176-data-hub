@@ -10,12 +10,13 @@ import {
   Building2,
   FileSpreadsheet,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  FolderOpen
 } from 'lucide-react';
 import type { DossierGroup, SummaryStats } from '../types/xml';
 import { formatVND, formatDateVN } from '../utils/dateUtils';
-import { isDesktopMode, exportDesktopStatistic } from '../utils/desktopBridge';
-import { exportDossiersToExcel } from '../utils/excelExporter';
+import { isDesktopMode, exportDesktopStatistic, openDesktopFileLocation } from '../utils/desktopBridge';
+import { exportDossiersToExcel, ExportResult } from '../utils/excelExporter';
 
 export type KpiModalType = 'DOSSIERS' | 'COST' | 'DRUGS' | 'SERVICES';
 
@@ -37,6 +38,7 @@ export const KpiDetailModal: React.FC<KpiDetailModalProps> = ({
   const [search, setSearch] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [exportedFilePath, setExportedFilePath] = useState<string | null>(null);
 
   // Aggregated data for Drugs
   const aggregatedDrugs = useMemo(() => {
@@ -150,27 +152,32 @@ export const KpiDetailModal: React.FC<KpiDetailModalProps> = ({
 
   const handleExportExcel = async () => {
     setIsExporting(true);
+    setToastMsg(null);
+    setExportedFilePath(null);
     try {
+      let result: ExportResult | undefined;
       if (type === 'DOSSIERS' || type === 'COST') {
-        // Export dossiers
-        exportDossiersToExcel(filteredDossiers.length > 0 ? filteredDossiers : dossiers, {
+        result = await exportDossiersToExcel(filteredDossiers.length > 0 ? filteredDossiers : dossiers, {
           tableChoice: type === 'COST' ? 'ALL_THREE' : 'XML1'
         });
-        setToastMsg(`Đã xuất thành công ${filteredDossiers.length || dossiers.length} hồ sơ ra file Excel!`);
       } else if (type === 'DRUGS') {
-        // Export XML2
-        exportDossiersToExcel(dossiers, {
+        result = await exportDossiersToExcel(dossiers, {
           tableChoice: 'XML2'
         });
-        setToastMsg('Đã xuất thành công toàn bộ dữ liệu Thuốc (XML2) ra file Excel!');
       } else if (type === 'SERVICES') {
-        // Export XML3
-        exportDossiersToExcel(dossiers, {
+        result = await exportDossiersToExcel(dossiers, {
           tableChoice: 'XML3'
         });
-        setToastMsg('Đã xuất thành công toàn bộ dữ liệu DVKT & VTYT (XML3) ra file Excel!');
       }
-      setTimeout(() => setToastMsg(null), 4000);
+
+      if (result && !result.cancelled) {
+        if (result.filePath) {
+          setExportedFilePath(result.filePath);
+          setToastMsg(`Đã xuất thành công ${result.totalExported.toLocaleString('vi-VN')} dòng vào: ${result.filePath}`);
+        } else {
+          setToastMsg(`Đã xuất thành công ${result.totalExported.toLocaleString('vi-VN')} dòng vào file ${result.fileName}!`);
+        }
+      }
     } catch (err: any) {
       console.error(err);
       alert('Lỗi xuất file Excel: ' + (err.message || 'Vui lòng thử lại'));
@@ -253,9 +260,21 @@ export const KpiDetailModal: React.FC<KpiDetailModalProps> = ({
 
         {/* Toast */}
         {toastMsg && (
-          <div className="mx-5 mt-3 p-3 bg-teal-500/20 border border-teal-500/50 rounded-xl text-teal-300 text-xs flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-teal-400" />
-            <span>{toastMsg}</span>
+          <div className="mx-5 mt-3 p-3 bg-teal-500/20 border border-teal-500/50 rounded-xl text-teal-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-teal-400" />
+              <span>{toastMsg}</span>
+            </div>
+            {exportedFilePath && (
+              <button
+                type="button"
+                onClick={() => openDesktopFileLocation(exportedFilePath)}
+                className="px-2.5 py-1 rounded-lg bg-teal-500/20 hover:bg-teal-500/30 text-teal-200 border border-teal-500/40 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer flex-shrink-0"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-teal-400" />
+                <span>Mở thư mục</span>
+              </button>
+            )}
           </div>
         )}
 

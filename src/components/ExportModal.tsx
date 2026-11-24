@@ -1,17 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Download, 
-  FileSpreadsheet, 
   Layers, 
-  Pill, 
-  Stethoscope, 
-  Calendar, 
   CheckCircle,
-  FileCheck2
+  FolderOpen,
+  FolderCog,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { DossierGroup, FilterState } from '../types/xml';
-import { exportDossiersToExcel, ExportOptions } from '../utils/excelExporter';
+import { exportDossiersToExcel, ExportOptions, ExportResult } from '../utils/excelExporter';
+import { 
+  isDesktopMode, 
+  getDesktopExportConfig, 
+  saveDesktopExportConfig, 
+  chooseDesktopExportDir, 
+  openDesktopFileLocation,
+  DesktopExportConfig 
+} from '../utils/desktopBridge';
 
 interface ExportModalProps {
   dossiers: DossierGroup[];
@@ -27,19 +34,58 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [tableChoice, setTableChoice] = useState<'XML1' | 'XML2' | 'XML3' | 'ALL_THREE'>('ALL_THREE');
   const [onlyItemsInDateRange, setOnlyItemsInDateRange] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Desktop export settings
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [desktopConfig, setDesktopConfig] = useState<DesktopExportConfig>({
+    askEveryTime: true,
+    defaultDir: '',
+    autoOpenFolder: false
+  });
+  const [showConfigSettings, setShowConfigSettings] = useState(false);
+
+  useEffect(() => {
+    const desktopEnv = isDesktopMode();
+    setIsDesktop(desktopEnv);
+    if (desktopEnv) {
+      getDesktopExportConfig().then(cfg => {
+        setDesktopConfig(cfg);
+      });
+    }
+  }, []);
 
   const totalXml1 = dossiers.length;
   const totalXml2 = dossiers.reduce((acc, d) => acc + d.xml2.length, 0);
   const totalXml3 = dossiers.reduce((acc, d) => acc + d.xml3.length, 0);
 
+  const handleToggleAskEveryTime = async (val: boolean) => {
+    const newCfg = { ...desktopConfig, askEveryTime: val };
+    setDesktopConfig(newCfg);
+    await saveDesktopExportConfig(newCfg);
+  };
+
+  const handleToggleAutoOpen = async (val: boolean) => {
+    const newCfg = { ...desktopConfig, autoOpenFolder: val };
+    setDesktopConfig(newCfg);
+    await saveDesktopExportConfig(newCfg);
+  };
+
+  const handleChooseFolder = async () => {
+    const res = await chooseDesktopExportDir();
+    if (res.success && res.chosenDir) {
+      setDesktopConfig(prev => ({ ...prev, defaultDir: res.chosenDir }));
+    }
+  };
+
   const handleExport = async () => {
     setIsExporting(true);
-    setExportSuccess(null);
+    setExportResult(null);
+    setExportError(null);
 
     try {
-      // Allow UI to update
-      await new Promise(r => setTimeout(r, 80));
+      await new Promise(r => setTimeout(r, 60));
 
       const options: ExportOptions = {
         tableChoice,
@@ -49,21 +95,32 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         dateField: filters.dateCriteria
       };
 
-      const result = exportDossiersToExcel(dossiers, options);
-      setExportSuccess(`Đã xuất thành công ${result.totalExported.toLocaleString('vi-VN')} dòng dữ liệu vào file ${result.fileName}!`);
+      const result = await exportDossiersToExcel(dossiers, options);
+      if (result.cancelled) {
+        setIsExporting(false);
+        return;
+      }
+      setExportResult(result);
     } catch (err: any) {
       console.error('Export error:', err);
-      alert('Lỗi khi xuất file Excel: ' + (err.message || 'Vui lòng thử lại.'));
+      setExportError(err.message || 'Lỗi khi xuất file Excel. Vui lòng thử lại.');
     } finally {
       setIsExporting(false);
     }
   };
 
+  const handleOpenFileLocation = () => {
+    if (exportResult?.filePath) {
+      openDesktopFileLocation(exportResult.filePath);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
+        
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-800 flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center">
               <Download className="w-5 h-5" />
@@ -75,14 +132,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Body Choices */}
-        <div className="py-5 space-y-4 text-xs">
+        <div className="py-4 space-y-4 text-xs overflow-y-auto flex-1 min-h-0">
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
               Chọn định dạng bảng cần xuất:
@@ -94,8 +151,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 onClick={() => setTableChoice('ALL_THREE')}
                 className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
                   tableChoice === 'ALL_THREE'
-                    ? 'bg-teal-500/10 border-teal-500/50 text-white shadow-sm'
-                    : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                    ? 'bg-teal-500/15 border-teal-500 text-white shadow-sm ring-1 ring-teal-500/30'
+                    : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -117,8 +174,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 onClick={() => setTableChoice('XML1')}
                 className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
                   tableChoice === 'XML1'
-                    ? 'bg-blue-500/10 border-blue-500/50 text-white shadow-sm'
-                    : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                    ? 'bg-blue-500/15 border-blue-500 text-white shadow-sm ring-1 ring-blue-500/30'
+                    : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -140,8 +197,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 onClick={() => setTableChoice('XML2')}
                 className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
                   tableChoice === 'XML2'
-                    ? 'bg-amber-500/10 border-amber-500/50 text-white shadow-sm'
-                    : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                    ? 'bg-amber-500/15 border-amber-500 text-white shadow-sm ring-1 ring-amber-500/30'
+                    : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -163,8 +220,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 onClick={() => setTableChoice('XML3')}
                 className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
                   tableChoice === 'XML3'
-                    ? 'bg-purple-500/10 border-purple-500/50 text-white shadow-sm'
-                    : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                    ? 'bg-purple-500/15 border-purple-500 text-white shadow-sm ring-1 ring-purple-500/30'
+                    : 'bg-slate-950/40 border-slate-800 text-slate-300 hover:border-slate-700'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -185,7 +242,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
           {/* Filtering option checkbox */}
           {(filters.fromDate || filters.toDate) && (
-            <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+            <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl">
               <label className="flex items-start gap-2.5 cursor-pointer text-slate-300">
                 <input
                   type="checkbox"
@@ -202,16 +259,110 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
           )}
 
-          {exportSuccess && (
-            <div className="flex items-center gap-2 p-3 bg-teal-500/10 border border-teal-500/30 rounded-xl text-teal-400 text-xs">
-              <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{exportSuccess}</span>
+          {/* Desktop Save Location Settings Box */}
+          {isDesktop && (
+            <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-2xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+                  <FolderCog className="w-4 h-4 text-teal-400" />
+                  <span>Cài Đặt Nơi Lưu File Excel (Bản Windows):</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowConfigSettings(!showConfigSettings)}
+                  className="text-[11px] text-teal-400 hover:underline cursor-pointer"
+                >
+                  {showConfigSettings ? 'Thu gọn' : 'Tùy chỉnh nơi lưu'}
+                </button>
+              </div>
+
+              {/* Mode switch */}
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={desktopConfig.askEveryTime}
+                  onChange={(e) => handleToggleAskEveryTime(e.target.checked)}
+                  className="rounded text-teal-500 focus:ring-teal-400 accent-teal-500 cursor-pointer"
+                />
+                <span className="text-xs font-medium">
+                  Luôn hỏi vị trí lưu mỗi khi bấm xuất (Hộp thoại Save As của Windows)
+                </span>
+              </label>
+
+              {(!desktopConfig.askEveryTime || showConfigSettings) && (
+                <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-400 flex-shrink-0">Thư mục mặc định:</span>
+                    <button
+                      type="button"
+                      onClick={handleChooseFolder}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      <span>Đổi thư mục...</span>
+                    </button>
+                  </div>
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800 font-mono text-[11px] text-slate-300 break-all select-all">
+                    {desktopConfig.defaultDir || 'Thư mục Downloads của người dùng'}
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-300 pt-1">
+                    <input
+                      type="checkbox"
+                      checked={desktopConfig.autoOpenFolder}
+                      onChange={(e) => handleToggleAutoOpen(e.target.checked)}
+                      className="rounded text-teal-500 focus:ring-teal-400 accent-teal-500 cursor-pointer"
+                    />
+                    <span className="text-xs text-slate-400">
+                      Tự động mở thư mục chứa file ngay sau khi xuất xong
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Export Success Result Box */}
+          {exportResult && (
+            <div className="p-3.5 bg-teal-500/10 border border-teal-500/30 rounded-2xl space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-teal-300 font-bold">
+                <CheckCircle className="w-4 h-4 text-teal-400 flex-shrink-0" />
+                <span>Xuất file Excel thành công! ({exportResult.totalExported.toLocaleString('vi-VN')} dòng)</span>
+              </div>
+
+              {exportResult.filePath ? (
+                <div className="space-y-2 pt-1">
+                  <div className="text-[11px] text-slate-300 font-mono break-all bg-slate-950/60 p-2 rounded-lg border border-teal-500/20">
+                    <span className="text-slate-400 block text-[10px]">Đã lưu tại đường dẫn:</span>
+                    {exportResult.filePath}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenFileLocation}
+                    className="w-full py-2 rounded-xl bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 font-bold text-xs flex items-center justify-center gap-1.5 border border-teal-500/40 transition-colors cursor-pointer"
+                  >
+                    <FolderOpen className="w-4 h-4 text-teal-400" />
+                    <span>Mở Thư Mục Chứa File Trong Windows Explorer</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-300">
+                  Tệp: <strong className="font-mono text-teal-400">{exportResult.fileName}</strong> đã được lưu vào máy.
+                </div>
+              )}
+            </div>
+          )}
+
+          {exportError && (
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{exportError}</span>
             </div>
           )}
         </div>
 
         {/* Footer buttons */}
-        <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
+        <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3 flex-shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-xs font-semibold cursor-pointer"
@@ -232,7 +383,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             ) : (
               <>
                 <Download className="w-4 h-4" />
-                <span>Tải File Excel Xuống</span>
+                <span>{exportResult ? 'Xuất Lại File Khác' : 'Tiến Hành Xuất File Excel'}</span>
               </>
             )}
           </button>

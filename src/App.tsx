@@ -33,7 +33,8 @@ import {
   getDesktopDossierDetail,
   deleteDesktopFile,
   clearDesktopData,
-  exportDesktopStatistic
+  exportDesktopStatistic,
+  openDesktopFileLocation
 } from './utils/desktopBridge';
 import { 
   Sparkles,
@@ -403,20 +404,25 @@ export const App: React.FC = () => {
   const handleExportStatItem = async (statType: 'ICD' | 'DRUG' | 'SERVICE' | 'DEPARTMENT', keyValue: string) => {
     if (desktop) {
       const res = await exportDesktopStatistic(statType, keyValue);
-      alert(`Đã xuất thành công ${res.rowCount} dòng vào file: ${res.fileName} (Thư mục Downloads)!`);
+      if (res.cancelled) return;
+      if (res.success) {
+        if (window.confirm(`Đã xuất thành công ${res.rowCount} dòng vào:\n${res.filePath}\n\nBạn có muốn mở thư mục chứa file ngay bây giờ không?`)) {
+          openDesktopFileLocation(res.filePath);
+        }
+      }
     } else {
       if (statType === 'ICD') {
         const matches = browserDossiers.filter(d => d.maBenhChinh === keyValue || (d.xml1?.MA_BENH_KT || '').includes(keyValue));
-        exportDossiersToExcel(matches, { tableChoice: 'XML1' });
+        await exportDossiersToExcel(matches, { tableChoice: 'XML1' });
       } else if (statType === 'DRUG') {
         const matches = browserDossiers.filter(d => d.xml2.some(dr => dr.TEN_THUOC === keyValue || dr.MA_THUOC === keyValue));
-        exportDossiersToExcel(matches, { tableChoice: 'XML2' });
+        await exportDossiersToExcel(matches, { tableChoice: 'XML2' });
       } else if (statType === 'SERVICE') {
         const matches = browserDossiers.filter(d => d.xml3.some(sv => sv.TEN_DICH_VU === keyValue || sv.MA_DICH_VU === keyValue || sv.TEN_VAT_TU === keyValue));
-        exportDossiersToExcel(matches, { tableChoice: 'XML3' });
+        await exportDossiersToExcel(matches, { tableChoice: 'XML3' });
       } else if (statType === 'DEPARTMENT') {
         const matches = browserDossiers.filter(d => d.maKhoa === keyValue);
-        exportDossiersToExcel(matches, { tableChoice: 'ALL_THREE' });
+        await exportDossiersToExcel(matches, { tableChoice: 'ALL_THREE' });
       }
     }
   };

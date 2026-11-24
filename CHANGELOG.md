@@ -4,6 +4,36 @@ Tất cả các thay đổi đáng chú ý của dự án **NsN XML DataHub 3176
 
 ---
 
+## [v1.1.1] - 2026-11-24
+
+### 📁 1. Cấu Hình Nơi Lưu & Hộp Thoại Chọn Vị Trí Khi Xuất File Excel (Bản Desktop EXE)
+- **Hộp thoại Windows Save As bản địa**: Cho phép người dùng trực tiếp lựa chọn thư mục lưu và đổi tên file theo ý muốn mỗi khi xuất dữ liệu.
+- **Cấu hình nơi lưu linh hoạt**:
+  - Tùy chọn **"Luôn hỏi vị trí lưu mỗi khi bấm xuất"** (bật mặc định).
+  - Tùy chọn cấu hình **"Thư mục lưu mặc định"** với nút `[📂 Đổi thư mục...]` mở hộp thoại chọn thư mục Windows (Folder Browser).
+  - Tùy chọn **"Tự động mở thư mục chứa file ngay sau khi xuất xong"**.
+- **Hiển thị đường dẫn lưu rõ ràng**: Sau khi xuất thành công, ứng dụng hiển thị đường dẫn tệp đầy đủ kèm nút **`[📂 Mở Thư Mục Chứa File Trong Windows Explorer]`** giúp định vị file ngay lập tức.
+- **Áp dụng toàn diện**: Áp dụng cho toàn bộ các chức năng xuất: Hộp thoại Xuất Excel chính (3 bảng), Modal chi tiết 4 thẻ KPI, và xuất 1-click tại bảng thống kê.
+
+### 🎯 2. Khắc Phục Lỗi Cài Đặt Bộ Lọc Bị Ẩn & Thêm Cột Tùy Ý Theo Bảng XML 1, 2, 3
+- **Sửa triệt để lỗi footer bị che khuất**: Cố định kích thước modal thông minh (`h-[90vh] max-h-[720px]`), phân chia vùng cuộn nội dung độc lập (`min-h-0 overflow-y-auto`) và thanh chân trang cố định (`sticky bottom-0`). Các nút điều khiển (`Khôi phục mặc định`, `Đóng & Áp Dụng Ngay`) luôn luôn hiển thị trực quan ở đáy màn hình.
+- **Cơ chế tự động lưu tức thì (Auto-Save)**: Mọi thao tác tích chọn bật/tắt hoặc chỉnh sửa tên hiển thị đều được tự động lưu ngay vào bộ nhớ cục bộ, không lo bị mất cấu hình khi đóng hộp thoại.
+- **Bộ chọn phân loại XML tiện dụng**: Bổ sung hệ thống Tab lọc nhanh theo nguồn bảng: `Tất Cả`, `XML1 (Tổng Hợp)`, `XML2 (Thuốc)`, `XML3 (DVKT & VTYT)`.
+- **Thêm cột hiển thị tùy ý không giới hạn**: Tích hợp danh mục toàn bộ các cột nghiệp vụ chuẩn QĐ 3176 (Mã bệnh nhân, Họ tên, CCCD, Thẻ BHYT, Khoa, Bệnh chính, Chẩn đoán, Mã HSBA, Tên thuốc, Đường dùng, Bác sĩ, Tên DVKT, Mã máy, Người thực hiện...). Người dùng chỉ cần chọn cột và bấm **`[➕ Thêm Cột Này]`** để tạo ngay nút lọc nhanh ngoài màn hình chính.
+- **Đồng bộ hiển thị tức thì ra ngoài màn hình**: Khắc phục lỗi tích chọn hiển thị nhưng không render ra ngoài thanh công cụ. Giờ đây tất cả các cột được bật đều xuất hiện đầy đủ trên thanh "Nhặt thông tin lọc" ngoài trang chính.
+
+### ☀️ 3. Đại Tu Độ Tương Phản Giao Diện Trắng (Light Theme) — Siêu Sắc Nét & Chống Nhạt Màu
+- Khắc phục triệt để tình trạng chữ bị nhạt màu, mờ nhạt hoặc hòa vào nền trắng:
+  - Chuẩn hóa toàn bộ văn bản chính sang màu than chì đậm **`#0f172a` (Slate-900)** với font weight đậm đà.
+  - Văn bản phụ rõ nét với màu **`#334155` (Slate-700)**.
+  - Ô nhập liệu và dropdown hiển thị chữ đen sắc nét `#0f172a`, đường viền rõ ràng `#94a3b8`, placeholder dễ đọc `#64748b`.
+  - Tiêu đề bảng (`thead`) có nền phân biệt `#f1f5f9` với viền đôi phân cách rõ rệt.
+- **Nâng cấp toàn bộ gam màu điểm nhấn y tế (Medical Accents)**:
+  - Màu Teal, Cyan, Emerald, Amber, Purple, Blue, Pink trên nền trắng được chuyển sang các sắc thái đậm sâu (Shade 700 như `#0f766e`, `#0369a1`, `#047857`, `#b45309`, `#6d28d9`), tăng độ tương phản lên hơn **4.5:1** đạt chuẩn WCAG AAA.
+  - Các khối thẻ card chuyển sang màu trắng thanh khiết với bóng mờ tinh tế, loại bỏ hoàn toàn các mảng màu đen/xám đục bị sót lại.
+
+---
+
 ## [v1.1.0] - 2026-11-24
 
 ### 🏥 1. Thiết Kế Icon Mới Chuyên Nghiệp Cho Ứng Dụng Windows EXE

@@ -75,3 +75,59 @@ export async function exportDesktopStatistic(statType: string, keyValue: string)
   });
   return res.json();
 }
+
+export interface DesktopExportConfig {
+  askEveryTime: boolean;
+  defaultDir: string;
+  autoOpenFolder: boolean;
+}
+
+export async function getDesktopExportConfig(): Promise<DesktopExportConfig> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/settings/export-config`);
+    return await res.json();
+  } catch (err) {
+    return { askEveryTime: true, defaultDir: '', autoOpenFolder: false };
+  }
+}
+
+export async function saveDesktopExportConfig(config: DesktopExportConfig): Promise<any> {
+  const res = await fetch(`${BASE_URL}/api/settings/export-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config)
+  });
+  return res.json();
+}
+
+export async function chooseDesktopExportDir(): Promise<{ success: boolean; chosenDir: string }> {
+  const res = await fetch(`${BASE_URL}/api/settings/choose-export-dir`, { method: 'POST' });
+  return res.json();
+}
+
+export async function showDesktopSaveAsDialog(defaultFileName: string, initialDir?: string): Promise<{ cancelled: boolean; filePath: string }> {
+  const res = await fetch(`${BASE_URL}/api/settings/save-as-dialog`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defaultFileName, initialDir })
+  });
+  return res.json();
+}
+
+export async function saveDesktopExcelFile(filePath: string, fileBase64: string): Promise<{ success: boolean; filePath: string; fileName: string; fileSize?: number }> {
+  const res = await fetch(`${BASE_URL}/api/export/save-excel-file`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath, fileBase64 })
+  });
+  return res.json();
+}
+
+export async function openDesktopFileLocation(path: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${BASE_URL}/api/system/open-file-location`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
+  });
+  return res.json();
+}

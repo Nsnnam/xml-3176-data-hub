@@ -2,7 +2,7 @@
 ; Author: Nguyễn Sơn Nam (Nsnnam)
 
 #define MyAppName "NsN XML DataHub 3176"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "Nguyễn Sơn Nam (Nsnnam)"
 #define MyAppURL "https://github.com/Nsnnam/xml-3176-data-hub"
 #define MyAppExeName "NsN_XML_DataHub_3176.exe"
@@ -18,7 +18,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\releases\setup
-OutputBaseFilename=NsN_XML_DataHub_3176_Setup_v1.1.0
+OutputBaseFilename=NsN_XML_DataHub_3176_Setup_v1.1.1
 SetupIconFile=..\desktop\app.ico
 Compression=lzma2/ultra64
 SolidCompression=yes

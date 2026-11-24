@@ -149,7 +149,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       case 'CARDS': return <CreditCard className="w-3.5 h-3.5 text-pink-400" />;
       case 'DOCTORS': return <User className="w-3.5 h-3.5 text-orange-400" />;
       case 'MACHINES': return <Cpu className="w-3.5 h-3.5 text-indigo-400" />;
-      default: return <Filter className="w-3.5 h-3.5 text-slate-400" />;
+      default: return <Filter className="w-3.5 h-3.5 text-teal-400" />;
     }
   };
 
@@ -298,17 +298,27 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           {quickFilterConfigs.filter(cfg => cfg.enabled).map(cfg => {
             const count = getFilterCount(cfg.id);
             const isPicked = count > 0;
+            const standardPickerIds = ['GROUPS', 'ICD', 'DRUGS', 'SERVICES', 'PATIENTS', 'DEPARTMENTS', 'CARDS', 'DOCTORS', 'MACHINES'];
+            const isCustom = !standardPickerIds.includes(cfg.id);
+            const isColumnActive = isCustom && filters.searchColumn === cfg.fieldKey && Boolean(filters.searchQuery);
+
             return (
               <button
                 key={cfg.id}
                 type="button"
-                onClick={() => onOpenPicker(cfg.id as PickerType)}
+                onClick={() => {
+                  if (standardPickerIds.includes(cfg.id)) {
+                    onOpenPicker(cfg.id as PickerType);
+                  } else {
+                    onFilterChange({ ...filters, searchColumn: cfg.fieldKey });
+                  }
+                }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer ${
-                  isPicked
+                  isPicked || isColumnActive
                     ? 'bg-teal-500/20 border-teal-500 text-teal-300 font-bold shadow-sm'
                     : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-teal-500/50 hover:text-white'
                 }`}
-                title={`Nhặt danh sách ${cfg.customLabel || cfg.defaultLabel}`}
+                title={`Nhặt / Tìm kiếm theo cột ${cfg.customLabel || cfg.defaultLabel}`}
               >
                 {renderPickerIcon(cfg.id)}
                 <span>

@@ -1,6 +1,9 @@
 import os
 import sys
 import time
+import json
+import base64
+import subprocess
 import threading
 import tkinter as tk
 from tkinter import filedialog
@@ -23,7 +26,39 @@ else:
 
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, 'nsn_xml3176_data.db')
+CONFIG_PATH = os.path.join(DATA_DIR, 'export_settings.json')
 db = XmlDatabase(DB_PATH)
+
+def get_default_downloads_dir():
+    try:
+        d = os.path.join(os.path.expanduser('~'), 'Downloads')
+        if os.path.exists(d):
+            return d
+    except Exception:
+        pass
+    return os.path.expanduser('~')
+
+def load_export_config():
+    default_cfg = {
+        "askEveryTime": True,
+        "defaultDir": get_default_downloads_dir(),
+        "autoOpenFolder": False
+    }
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                saved = json.load(f)
+                default_cfg.update(saved)
+        except Exception:
+            pass
+    return default_cfg
+
+def save_export_config_to_disk(cfg):
+    try:
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving export settings: {e}")
 
 app = FastAPI(title="NsN XML DataHub 3176 Desktop Engine")
 
@@ -181,24 +216,176 @@ def get_dossier_detail(ma_lk: str):
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ")
     return detail
 
-# 5. Export Detail from Statistics Click
+# 5. Export Settings & Direct File Saving
+class ExportConfigPayload(BaseModel):
+    askEveryTime: bool = True
+    defaultDir: str = ""
+    autoOpenFolder: bool = False
+
+class SaveAsDialogPayload(BaseModel):
+    defaultFileName: str = "NsN_Export_3176.xlsx"
+    initialDir: Optional[str] = ""
+
+class SaveExcelPayload(BaseModel):
+    filePath: str
+    fileBase64: str
+
+class OpenLocationPayload(BaseModel):
+    path: str
+
+@app.get("/api/settings/export-config")
+def get_export_config():
+    return load_export_config()
+
+@app.post("/api/settings/export-config")
+def update_export_config(payload: ExportConfigPayload):
+    cfg = load_export_config()
+    cfg["askEveryTime"] = payload.askEveryTime
+    if payload.defaultDir and os.path.exists(payload.defaultDir):
+        cfg["defaultDir"] = payload.defaultDir
+    cfg["autoOpenFolder"] = payload.autoOpenFolder
+    save_export_config_to_disk(cfg)
+    return {"success": True, "config": cfg}
+
+@app.post("/api/settings/choose-export-dir")
+def choose_export_directory():
+    cfg = load_export_config()
+    initial_dir = cfg.get("defaultDir") if os.path.exists(cfg.get("defaultDir", "")) else get_default_downloads_dir()
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    chosen_dir = filedialog.askdirectory(
+        title="Chọn thư mục lưu file Excel mặc định",
+        initialdir=initial_dir
+    )
+    root.destroy()
+    if chosen_dir and os.path.exists(chosen_dir):
+        cfg["defaultDir"] = chosen_dir
+        save_export_config_to_disk(cfg)
+        return {"success": True, "chosenDir": chosen_dir}
+    return {"success": False, "chosenDir": cfg.get("defaultDir")}
+
+@app.post("/api/settings/save-as-dialog")
+def open_save_as_dialog(payload: SaveAsDialogPayload):
+    cfg = load_export_config()
+    initial_dir = payload.initialDir or cfg.get("defaultDir") or get_default_downloads_dir()
+    if not os.path.exists(initial_dir):
+        initial_dir = get_default_downloads_dir()
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    chosen_path = filedialog.asksaveasfilename(
+        title="Chọn nơi lưu file Excel",
+        initialdir=initial_dir,
+        initialfile=payload.defaultFileName,
+        defaultextension=".xlsx",
+        filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
+    )
+    root.destroy()
+    if chosen_path:
+        # Also remember last used directory
+        last_dir = os.path.dirname(chosen_path)
+        if last_dir and os.path.exists(last_dir):
+            cfg["lastUsedDir"] = last_dir
+            save_export_config_to_disk(cfg)
+        return {"cancelled": False, "filePath": chosen_path}
+    return {"cancelled": True, "filePath": ""}
+
+@app.post("/api/export/save-excel-file")
+def save_excel_file_directly(payload: SaveExcelPayload):
+    try:
+        target_path = payload.filePath
+        if not target_path:
+            raise HTTPException(status_code=400, detail="Đường dẫn lưu file không hợp lệ.")
+
+        target_dir = os.path.dirname(target_path)
+        if target_dir:
+            os.makedirs(target_dir, exist_ok=True)
+
+        data_bytes = base64.b64decode(payload.fileBase64)
+        with open(target_path, "wb") as f:
+            f.write(data_bytes)
+
+        cfg = load_export_config()
+        if cfg.get("autoOpenFolder"):
+            try:
+                subprocess.Popen(f'explorer /select,"{os.path.abspath(target_path)}"')
+            except Exception:
+                pass
+
+        return {
+            "success": True,
+            "filePath": target_path,
+            "fileName": os.path.basename(target_path),
+            "fileSize": len(data_bytes)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi ghi file Excel: {str(e)}")
+
+@app.post("/api/system/open-file-location")
+def open_file_location(payload: OpenLocationPayload):
+    p = payload.path
+    if not p or not os.path.exists(p):
+        folder = os.path.dirname(p)
+        if folder and os.path.exists(folder):
+            os.startfile(folder)
+            return {"success": True}
+        raise HTTPException(status_code=404, detail="File hoặc thư mục không tồn tại.")
+    try:
+        subprocess.Popen(f'explorer /select,"{os.path.abspath(p)}"')
+        return {"success": True}
+    except Exception:
+        try:
+            os.startfile(os.path.dirname(p))
+            return {"success": True}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+# 6. Export Detail from Statistics Click
 @app.post("/api/export/statistic")
 def export_statistic(payload: StatExportPayload):
-    downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+    cfg = load_export_config()
+    default_dir = cfg.get("defaultDir") or get_default_downloads_dir()
     timestamp = time.strftime('%Y%m%d_%H%M%S')
     clean_val = "".join([c if c.isalnum() else "_" for c in payload.keyValue])[:20]
     out_name = f"Xuat_ThongKe_{payload.statType}_{clean_val}_{timestamp}.xlsx"
-    out_path = os.path.join(downloads_dir, out_name)
+
+    # If askEveryTime, prompt save-as dialog
+    if cfg.get("askEveryTime", True):
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        chosen_path = filedialog.asksaveasfilename(
+            title="Chọn nơi lưu file thống kê Excel",
+            initialdir=default_dir,
+            initialfile=out_name,
+            defaultextension=".xlsx",
+            filetypes=[("Tệp Excel (*.xlsx)", "*.xlsx"), ("Tất cả tệp (*.*)", "*.*")]
+        )
+        root.destroy()
+        if not chosen_path:
+            return {"success": False, "cancelled": True}
+        out_path = chosen_path
+    else:
+        out_path = os.path.join(default_dir, out_name)
 
     res = db.export_statistic_detail(payload.statType, payload.keyValue, out_path)
+    
+    if cfg.get("autoOpenFolder") and os.path.exists(out_path):
+        try:
+            subprocess.Popen(f'explorer /select,"{os.path.abspath(out_path)}"')
+        except Exception:
+            pass
+
     return {
         "success": True,
         "filePath": out_path,
-        "fileName": out_name,
+        "fileName": os.path.basename(out_path),
         "rowCount": res.get("rowCount", 0)
     }
 
-# 6. Static files (React build dist)
+# 7. Static files (React build dist)
 DIST_DIR = os.path.join(BASE_DIR, 'dist')
 if os.path.exists(DIST_DIR):
     app.mount("/", StaticFiles(directory=DIST_DIR, html=True), name="static")

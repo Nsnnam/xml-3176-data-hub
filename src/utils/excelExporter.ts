@@ -10,6 +10,12 @@ import {
   Xml3Record 
 } from '../types/xml';
 import { isDateInRange, parseXmlDate } from './dateUtils';
+import { 
+  isDesktopMode, 
+  getDesktopExportConfig, 
+  showDesktopSaveAsDialog, 
+  saveDesktopExcelFile 
+} from './desktopBridge';
 
 export interface ExportOptions {
   tableChoice: 'XML1' | 'XML2' | 'XML3' | 'ALL_THREE';
@@ -17,6 +23,13 @@ export interface ExportOptions {
   fromDate?: string;
   toDate?: string;
   dateField?: string;
+}
+
+export interface ExportResult {
+  totalExported: number;
+  fileName: string;
+  filePath?: string;
+  cancelled?: boolean;
 }
 
 /**
@@ -47,12 +60,53 @@ function getColumnWidths(rows: any[][], headers: readonly string[]) {
 }
 
 /**
+ * Save Workbook out to File (Desktop Native Save As or Web Blob Download)
+ */
+export async function saveWorkbookOut(wb: XLSX.WorkBook, defaultFileName: string): Promise<{ fileName: string; filePath?: string; cancelled?: boolean }> {
+  if (isDesktopMode()) {
+    try {
+      const cfg = await getDesktopExportConfig();
+      let targetPath = '';
+
+      if (cfg.askEveryTime !== false) {
+        // Pop Windows Save As Dialog
+        const dlg = await showDesktopSaveAsDialog(defaultFileName, cfg.defaultDir);
+        if (dlg.cancelled || !dlg.filePath) {
+          return { fileName: defaultFileName, cancelled: true };
+        }
+        targetPath = dlg.filePath;
+      } else {
+        const baseDir = cfg.defaultDir || '';
+        targetPath = baseDir ? `${baseDir.replace(/\\/g, '/')}/${defaultFileName}` : defaultFileName;
+      }
+
+      // Convert to base64 and save via desktop engine
+      const b64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+      const saved = await saveDesktopExcelFile(targetPath, b64);
+      return {
+        fileName: saved.fileName || defaultFileName,
+        filePath: saved.filePath || targetPath,
+        cancelled: false
+      };
+    } catch (desktopErr) {
+      console.warn('Desktop native save failed, falling back to browser blob:', desktopErr);
+    }
+  }
+
+  // Web fallback
+  const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  saveAs(blob, defaultFileName);
+  return { fileName: defaultFileName, cancelled: false };
+}
+
+/**
  * Export filtered dossiers to standard Excel file(s)
  */
-export function exportDossiersToExcel(
+export async function exportDossiersToExcel(
   dossiers: DossierGroup[],
   options: ExportOptions
-): { totalExported: number; fileName: string } {
+): Promise<ExportResult> {
   const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
 
   // 1. Prepare XML1 records
@@ -156,10 +210,12 @@ export function exportDossiersToExcel(
     totalExported = (xml1Rows.length - 1) + (xml2Rows.length - 1) + (xml3Rows.length - 1);
   }
 
-  // Write file out
-  const wbOut = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  const blob = new Blob([wbOut], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  saveAs(blob, finalFileName);
-
-  return { totalExported, fileName: finalFileName };
+  // Save file out (Desktop Save As / Direct Save or Web Blob)
+  const saveRes = await saveWorkbookOut(wb, finalFileName);
+  return { 
+    totalExported: saveRes.cancelled ? 0 : totalExported, 
+    fileName: saveRes.fileName || finalFileName,
+    filePath: saveRes.filePath,
+    cancelled: saveRes.cancelled
+  };
 }
